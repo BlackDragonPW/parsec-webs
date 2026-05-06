@@ -31,7 +31,6 @@
 //   re-issued through the phantom channel, response piped back.
 
 use std::collections::HashMap;
-use std::sync::Arc;
 use std::time::{Duration, SystemTime, UNIX_EPOCH};
 use anyhow::{anyhow, Result};
 use rand::Rng;
@@ -43,7 +42,7 @@ use rand::rngs::OsRng;
 use rand::RngCore;
 use serde::{Deserialize, Serialize};
 use tokio::sync::RwLock;
-use tracing::{debug, info};
+use tracing::info;
 
 // ── Ephemeral session keys ────────────────────────────────────────────────────
 

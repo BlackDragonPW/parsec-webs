@@ -6,14 +6,14 @@
 // Called from JNI Java_os_parsec_browser_ParsecCore_ipc().
 
 use std::sync::Arc;
-use serde::{Deserialize, Serialize};
+use serde::Deserialize;
 use serde_json::Value;
 use tokio::runtime::Runtime;
 use tracing::warn;
 
-use crate::{BrowserState, BrowserPrefs, TabState, DownloadItem};
-use crate::{blocker, profile, sync};
-use crate::extension_store::{ExtensionAPICall, ExtensionRuntime};
+use crate::{BrowserState, TabState, DownloadItem};
+use crate::blocker;
+use crate::extension_store::ExtensionAPICall;
 
 // ── IPC command enum ──────────────────────────────────────────────────────────
 
@@ -297,7 +297,7 @@ pub fn dispatch(json: &str, state: &Arc<BrowserState>, rt: &Runtime) -> String {
         }
         IpcCmd::SaveSession { tabs } => {
             let saved: Vec<profile::SavedTab> = tabs.into_iter()
-                .map(|t| profile::SavedTab { url: t.url, title: t.title, favicon: "🌐".into(), pinned: false, incognito: false })
+                .map(|t| profile::SavedTab { url: t.url, title: t.title, favicon: "🌐".into(), pinned: false, incognito: false, thumbnail: None })
                 .collect();
             state.profile.lock().unwrap().save_session(saved);
             ok(&msg_id, serde_json::json!({}))
@@ -454,13 +454,13 @@ pub fn dispatch(json: &str, state: &Arc<BrowserState>, rt: &Runtime) -> String {
             state.push_event(serde_json::json!({ "type": "OpenExternal", "url": url }));
             ok(&msg_id, serde_json::json!({}))
         }
-        IpcCmd::SetSitePermission { origin, key, state } => {
-            let st = match state.as_str() {
-                "allow" => permission_manager::PermState::Allow,
-                "block" => permission_manager::PermState::Block,
-                _       => permission_manager::PermState::Ask,
+        IpcCmd::SetSitePermission { origin, key, state: perm_str } => {
+            let st = match perm_str.as_str() {
+                "allow" => crate::permission_manager::PermState::Allow,
+                "block" => crate::permission_manager::PermState::Block,
+                _       => crate::permission_manager::PermState::Ask,
             };
-            let mut perms = state_ref.perms.lock().unwrap();
+            let mut perms = state.perms.lock().unwrap();
             match key.as_str() {
                 "camera"         => perms.set_camera(&origin, st),
                 "microphone"     => perms.set_microphone(&origin, st),

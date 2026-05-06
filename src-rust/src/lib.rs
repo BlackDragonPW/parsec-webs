@@ -38,7 +38,7 @@ mod permission_manager;
 use std::collections::HashMap;
 use std::sync::{Arc, Mutex};
 use jni::JNIEnv;
-use jni::objects::{JClass, JString, JObject};
+use jni::objects::{JClass, JString};
 use jni::sys::{jstring, jboolean, jint, jlong, JNI_TRUE, JNI_FALSE};
 use once_cell::sync::OnceCell;
 use parking_lot::RwLock;
@@ -193,7 +193,13 @@ pub extern "system" fn Java_os_parsec_browser_ParsecCore_init(
     data_dir_j: JString,
 ) {
     // Init logging → Android logcat
-    let _ = tracing_android::init("ParsecCore");
+    // Init logging → Android logcat (tracing-android 0.2 uses layer(), not init())
+    {
+        use tracing_subscriber::prelude::*;
+        let _ = tracing_subscriber::registry()
+            .with(tracing_android::layer("ParsecCore").unwrap())
+            .init();
+    }
 
     let data_dir: String = env.get_string(&data_dir_j)
         .map(|s| s.into())
