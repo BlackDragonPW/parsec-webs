@@ -58,7 +58,7 @@ gradle wrapper --gradle-version 8.6
 curl -sL "https://services.gradle.org/distributions/gradle-8.6-wrapper.jar" \
      -o gradle/wrapper/gradle-wrapper.jar
 # Verify:
-echo "1f3067073041bc44554d0efe5d402a33bc3d3c93cc39ab684f308586d732a80d  gradle/wrapper/gradle-wrapper.jar" | sha256sum -c
+echo "4edeb139d6cfa4c0467bab5ae11df1d492e1babf1dfd7ef846511242d8fbd122  gradle/wrapper/gradle-wrapper.jar" | sha256sum -c
 ```
 
 ---

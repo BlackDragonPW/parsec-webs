@@ -37,7 +37,7 @@ jobs:
       - name: Bootstrap gradle-wrapper.jar
         run: |
           WRAPPER_JAR="android/gradle/wrapper/gradle-wrapper.jar"
-          EXPECTED_SHA="1f3067073041bc44554d0efe5d402a33bc3d3c93cc39ab684f308586d732a80d"
+          EXPECTED_SHA="4edeb139d6cfa4c0467bab5ae11df1d492e1babf1dfd7ef846511242d8fbd122"
           curl -sL \
             "https://services.gradle.org/distributions/gradle-8.6-wrapper.jar" \
             -o "$WRAPPER_JAR"
