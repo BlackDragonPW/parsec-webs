@@ -1,49 +1,6 @@
-[package]
-name    = "parsec-gpu-renderer"
-version = "1.1.0"
-edition = "2021"
-authors = ["divyaamshu1"]
-license = "MIT"
-description = "GPU-accelerated text renderer for Parsec IDE editor canvas (wgpu)"
-
-# ── Core GPU stack ────────────────────────────────────────────────────────────
-[dependencies]
-# wgpu: cross-platform GPU (Metal/Vulkan/DX12/WebGPU)
-wgpu          = { version = "0.19", features = ["wgsl"] }
-
-# wgpu-text: glyph atlas + text batching on top of wgpu
-# Same glyph-brush pipeline Zed uses, but via wgpu not Metal directly.
-wgpu-text     = "0.9"
-
-# raw-window-handle: lets us accept the Tauri HWND/NSView/XID without
-# depending on Tauri itself — keeps this crate portable and testable.
-raw-window-handle = "0.6"
-
-# Font loading
-ab_glyph      = "0.2"          # TTF/OTF rasteriser (used by wgpu-text)
-
-# Sync primitives
-parking_lot   = "0.12"
-
-# Logging
-tracing       = "0.1"
-
-# Error handling
-anyhow        = "1.0"
-
-# Serialisation (GlyphFrame sent over channel)
-serde         = { version = "1.0", features = ["derive"] }
-
-# ── Platform-specific GPU backends ───────────────────────────────────────────
-[target.'cfg(target_os = "macos")'.dependencies]
-# Metal backend selected automatically by wgpu on macOS — no extra dep needed.
-
-[target.'cfg(target_os = "windows")'.dependencies]
-# DX12 backend selected automatically by wgpu on Windows.
-
-[target.'cfg(target_os = "linux")'.dependencies]
-# Vulkan backend selected automatically by wgpu on Linux.
-
-[dev-dependencies]
-# Headless wgpu tests
-pollster = "0.3"
+[workspace]
+members = [
+    "src-rust",
+    "gpu-renderer",
+]
+resolver = "2"
