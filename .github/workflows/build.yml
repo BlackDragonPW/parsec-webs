@@ -10,7 +10,7 @@ on:
 env:
   CARGO_TERM_COLOR: always
   ANDROID_NDK_VERSION: "26.3.11579264"
-  RUST_VERSION: "1.78.0"
+  RUST_VERSION: "1.85.0"
 
 jobs:
   build:
