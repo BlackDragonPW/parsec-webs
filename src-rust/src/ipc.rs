@@ -12,7 +12,7 @@ use tokio::runtime::Runtime;
 use tracing::warn;
 
 use crate::{BrowserState, TabState, DownloadItem};
-use crate::{blocker, profile, sync};
+use crate::{blocker, profile};
 use crate::extension_store::ExtensionAPICall;
 
 // ── IPC command enum ──────────────────────────────────────────────────────────
@@ -278,7 +278,8 @@ pub fn dispatch(json: &str, state: &Arc<BrowserState>, rt: &Runtime) -> String {
 
         // ── History ───────────────────────────────────────────────────────────
         IpcCmd::GetHistory { limit } => {
-            let hist = state.profile.lock().unwrap().get_history(limit.unwrap_or(200));
+            let guard = state.profile.lock().unwrap();
+            let hist = guard.get_history(limit.unwrap_or(200));
             ok(&msg_id, serde_json::to_value(&hist).unwrap_or_default())
         }
         IpcCmd::SearchHistory { query } => {
@@ -292,7 +293,8 @@ pub fn dispatch(json: &str, state: &Arc<BrowserState>, rt: &Runtime) -> String {
 
         // ── Sessions ──────────────────────────────────────────────────────────
         IpcCmd::GetSessions => {
-            let sessions = state.profile.lock().unwrap().get_sessions();
+            let guard = state.profile.lock().unwrap();
+            let sessions = guard.get_sessions();
             ok(&msg_id, serde_json::to_value(&sessions).unwrap_or_default())
         }
         IpcCmd::SaveSession { tabs } => {
@@ -484,7 +486,7 @@ pub fn dispatch(json: &str, state: &Arc<BrowserState>, rt: &Runtime) -> String {
                 "dns_private": true
             }))
         }
-        IpcCmd::GhostConfigure { entry_node, middle_node, exit_node, private_dns } => {
+        IpcCmd::GhostConfigure { entry_node: _, middle_node: _, exit_node: _, private_dns: _ } => {
             ok(&msg_id, serde_json::json!({ "configured": true }))
         }
         IpcCmd::GetSystemInfo => {
