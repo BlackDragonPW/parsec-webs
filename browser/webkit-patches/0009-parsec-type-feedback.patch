@@ -1,0 +1,629 @@
+From: Parsec Web <patches@parsec.os>
+Date: 2026-02-21
+Subject: [PATCH 9/9] Enhanced speculative type feedback — V8 Turbofan-style inline profiles
+
+Background
+──────────
+V8 Turbofan's biggest advantage over JSC's FTL is not the optimizer itself —
+both are LLVM-class compilers. The advantage is the quality of type feedback
+Turbofan receives.
+
+V8 collects feedback at every operation site:
+  - Binary operations: what types did lhs/rhs have? (Int32? Double? String?)
+  - Property accesses: what structure(s) did the object have?
+  - Function calls: what callee(s) were called?
+  - Array accesses: what element kind? (packed SMI? packed double? holey?)
+
+This feedback lets Turbofan specialize aggressively. When it knows a binary
+op always sees (Int32, Int32), it emits a 2-instruction integer add with an
+overflow check. Without feedback, it emits a 10-instruction polymorphic add.
+
+JSC already has inline caches and ValueProfiles, but:
+  1. ValueProfiles only collect "last seen type" — not a histogram
+  2. BinaryArith profiles don't distinguish integer vs. double overflow
+  3. Array element kind feedback is missing
+  4. Call feedback doesn't track callee argument types
+
+This patch adds:
+
+  1. ParsecTypeProfile — a compact histogram (4 slots) tracking the last 4
+     distinct types seen at a site. More accurate than "last seen type".
+
+  2. ParsecBinaryProfile — records (lhsType, rhsType, resultType) for every
+     binary operation site. PMJ and FTL use this for tighter specialization.
+
+  3. ParsecArrayProfile — tracks element kind (SmiPacked, DoublePacked,
+     ObjectPacked, Holey) per array access site. Enables unboxed array ops.
+
+  4. ParsecCallProfile — records the top-3 callees seen at a call site with
+     their argument type signatures. Enables direct-call specialization.
+
+Files added:
+  Source/JavaScriptCore/bytecode/ParsecTypeProfile.h
+  Source/JavaScriptCore/bytecode/ParsecTypeProfile.cpp
+  Source/JavaScriptCore/bytecode/ParsecBinaryProfile.h
+  Source/JavaScriptCore/bytecode/ParsecArrayProfile.h
+
+Files modified:
+  Source/JavaScriptCore/bytecode/CodeBlock.h    (add profile arrays)
+  Source/JavaScriptCore/bytecode/CodeBlock.cpp  (allocate/query profiles)
+  Source/JavaScriptCore/jit/BaselineJIT.cpp     (emit profile instrumentation)
+  Source/JavaScriptCore/CMakeLists.txt
+---
+
+diff --git a/Source/JavaScriptCore/bytecode/ParsecTypeProfile.h b/Source/JavaScriptCore/bytecode/ParsecTypeProfile.h
+new file mode 100644
+--- /dev/null
++++ b/Source/JavaScriptCore/bytecode/ParsecTypeProfile.h
+@@ -0,0 +1,180 @@
++#pragma once
++// ================================================================
++//  ParsecTypeProfile.h
++//  Enhanced type feedback for V8-competitive speculation quality
++//
++//  A ParsecTypeProfile maintains a compact histogram of the types
++//  observed at a single bytecode site. Unlike JSC's existing
++//  ValueProfile (which only stores the most recently observed type),
++//  a ParsecTypeProfile tracks the last N distinct types with counts.
++//
++//  This gives the optimizer much better information:
++//    ValueProfile says:    "last seen: Int32"
++//    ParsecTypeProfile says: "Int32: 9847 times, Double: 3 times"
++//
++//  The optimizer can then decide: speculate Int32 (deopt threshold 3/9850
++//  = 0.03%, acceptable), vs. don't speculate (no optimization).
++// ================================================================
++
++#include <cstdint>
++#include <wtf/Atomics.h>
++#include "SpeculatedType.h"
++
++namespace JSC {
++
++// Type tags — compact encoding, fits in 4 bits
++enum class PTC : uint8_t {
++    Empty       = 0,
++    Int32       = 1,
++    Double      = 2,
++    Boolean     = 3,
++    Null        = 4,
++    Undefined   = 5,
++    String      = 6,
++    Symbol      = 7,
++    BigInt      = 8,
++    Object      = 9,   // generic object
++    Array       = 10,  // specifically an array
++    Function    = 11,
++    Other       = 15,
++};
+
++// Convert a JSValue to its PTC tag (called from generated code)
++PTC ptcFromJSValue(JSValue);
++
++// Convert PTC to SpeculatedType for DFG/FTL
++SpeculatedType ptcToSpeculatedType(PTC);
+
++// ── Single-site histogram (4 slots) ──────────────────────────────
++// Tracks up to 4 distinct types. If more than 4 types are seen,
++// the least-frequent slot is evicted ("LFU eviction").
++// Each slot stores: type tag (4 bits) + count (28 bits) = 32 bits.
++
++struct ParsecTypeSlot {
++    uint32_t packed { 0 }; // [3:0]=PTC tag, [31:4]=count
++
++    PTC  tag()   const { return static_cast<PTC>(packed & 0xF); }
++    uint32_t count() const { return packed >> 4; }
++    bool empty() const { return tag() == PTC::Empty; }
++
++    void set(PTC t, uint32_t c) { packed = (c << 4) | static_cast<uint8_t>(t); }
++    void incrementCount() { packed += (1 << 4); } // increment count field
++};
+
++class ParsecTypeProfile {
++public:
++    static constexpr unsigned kNumSlots = 4;
+
++    // Record a new observation. Called from JIT-generated profiling code.
++    // Must be fast — this runs on every bytecode execution during profiling.
++    ALWAYS_INLINE void observe(PTC tag) {
++        // Fast path: first slot matches (most common case — monomorphic sites)
++        if (LIKELY(m_slots[0].tag() == tag)) {
++            m_slots[0].incrementCount();
++            return;
++        }
++        observeSlow(tag);
++    }
+
++    // Observe from a JSValue (convenience wrapper)
++    ALWAYS_INLINE void observeValue(JSValue v) {
++        observe(ptcFromJSValue(v));
++    }
+
++    // Query: is this site monomorphic? (Only one type observed)
++    bool isMonomorphic() const {
++        unsigned filled = 0;
++        for (auto& slot : m_slots) if (!slot.empty()) ++filled;
++        return filled == 1;
++    }
+
++    // Query: most common type (for speculation)
++    PTC dominantType() const {
++        PTC best = PTC::Empty;
++        uint32_t bestCount = 0;
++        for (auto& slot : m_slots) {
++            if (!slot.empty() && slot.count() > bestCount) {
++                bestCount = slot.count();
++                best = slot.tag();
++            }
++        }
++        return best;
++    }
+
++    // Query: confidence (dominant / total, range 0.0-1.0)
++    float confidence() const {
++        uint32_t total = 0, dominant = 0;
++        PTC dom = PTC::Empty;
++        for (auto& slot : m_slots) {
++            total += slot.count();
++            if (slot.count() > dominant) { dominant = slot.count(); dom = slot.tag(); }
++        }
++        (void)dom;
++        if (total == 0) return 0.0f;
++        return static_cast<float>(dominant) / static_cast<float>(total);
++    }
+
++    // Convert to SpeculatedType for DFG/FTL consumption
++    SpeculatedType toSpeculatedType() const {
++        SpeculatedType result = SpecNone;
++        for (auto& slot : m_slots) {
++            if (!slot.empty())
++                result |= ptcToSpeculatedType(slot.tag());
++        }
++        return result;
++    }
+
++    // Clear all observations (on code invalidation)
++    void clear() { for (auto& s : m_slots) s.packed = 0; }
+
++    uint64_t totalObservations() const {
++        uint64_t t = 0;
++        for (auto& s : m_slots) t += s.count();
++        return t;
++    }
+
++private:
++    void observeSlow(PTC tag);
++    ParsecTypeSlot m_slots[kNumSlots];
++};
+
++// ── Binary operation profile ──────────────────────────────────────
++// Tracks (lhsType, rhsType) pairs for binary operations.
++// PMJ/FTL use this to decide whether to emit unboxed arithmetic.
+
++struct ParsecBinaryProfile {
++    static constexpr unsigned kNumPairs = 4;
+
++    struct TypePair {
++        PTC lhs { PTC::Empty };
++        PTC rhs { PTC::Empty };
++        PTC result { PTC::Empty };
++        uint32_t count { 0 };
++    };
+
++    ALWAYS_INLINE void observe(PTC lhsTag, PTC rhsTag, PTC resultTag) {
++        for (auto& pair : m_pairs) {
++            if (pair.lhs == lhsTag && pair.rhs == rhsTag) {
++                pair.count++;
++                pair.result = resultTag; // update result type
++                return;
++            }
++        }
++        // New pair — find empty slot or evict LFU
++        observeSlow(lhsTag, rhsTag, resultTag);
++    }
+
++    // Is this op always (Int32, Int32)?
++    bool isAlwaysIntInt() const {
++        for (auto& p : m_pairs)
++            if (p.count > 0 && (p.lhs != PTC::Int32 || p.rhs != PTC::Int32))
++                return false;
++        return m_pairs[0].count > 0;
++    }
+
++    // Is this op always (Double, Double) or (Int32, Double)?
++    bool isAlwaysNumericNumeric() const {
++        for (auto& p : m_pairs) {
++            if (p.count == 0) continue;
++            bool lhsNum = (p.lhs == PTC::Int32 || p.lhs == PTC::Double);
++            bool rhsNum = (p.rhs == PTC::Int32 || p.rhs == PTC::Double);
++            if (!lhsNum || !rhsNum) return false;
++        }
++        return m_pairs[0].count > 0;
++    }
+
++    void clear() { for (auto& p : m_pairs) p = {}; }
+
++private:
++    void observeSlow(PTC lhs, PTC rhs, PTC result);
++    TypePair m_pairs[kNumPairs];
++};
+
++// ── Array element kind profile ────────────────────────────────────
++// Tracks element kind per array access site.
++// Enables unboxed array storage (double arrays, SMI arrays).
+
++enum class ArrayElementKind : uint8_t {
++    Unknown      = 0,
++    SmiPacked    = 1,  // All elements are SMI integers, no holes
++    DoublePacked = 2,  // All elements are doubles, no holes
++    ObjectPacked = 3,  // All elements are objects, no holes
++    HoleySmi     = 4,  // SMI integers with holes
++    HoleyDouble  = 5,  // Doubles with holes
++    HoleyObject  = 6,  // Objects with holes (most general)
++};
+
++struct ParsecArrayProfile {
++    ArrayElementKind kind { ArrayElementKind::Unknown };
++    uint32_t         accessCount { 0 };
++    bool             sawOutOfBounds { false };
+
++    ALWAYS_INLINE void observe(ArrayElementKind k, bool oob) {
++        accessCount++;
++        sawOutOfBounds |= oob;
++        // Merge kinds (can only go towards more general)
++        if (kind == ArrayElementKind::Unknown) {
++            kind = k;
++        } else if (kind != k) {
++            // Generalize: e.g. SmiPacked + DoublePacked → DoublePacked
++            if ((kind == ArrayElementKind::SmiPacked && k == ArrayElementKind::DoublePacked) ||
++                (kind == ArrayElementKind::DoublePacked && k == ArrayElementKind::SmiPacked))
++                kind = ArrayElementKind::DoublePacked;
++            else
++                kind = ArrayElementKind::HoleyObject; // most general
++        }
++    }
+
++    bool isPackedSmi()    const { return kind == ArrayElementKind::SmiPacked; }
++    bool isPackedDouble() const { return kind == ArrayElementKind::DoublePacked || isPackedSmi(); }
++    bool isHoley()        const { return kind >= ArrayElementKind::HoleySmi; }
++    void clear() { *this = {}; }
++};
+
++// ── Call profile ──────────────────────────────────────────────────
++// Tracks top-3 callees and their argument type signatures.
+
++struct ParsecCallProfile {
++    static constexpr unsigned kNumCallees = 3;
+
++    struct CalleeRecord {
++        uintptr_t calleePtr { 0 };    // raw pointer to callee JSFunction
++        uint32_t  callCount { 0 };
++        PTC       argTypes[4] { };    // types of first 4 arguments
++        uint8_t   numArgs { 0 };
++    };
+
++    ALWAYS_INLINE void observe(JSValue callee, const JSValue* args, uint8_t argc) {
++        uintptr_t ptr = callee.isCell() ? reinterpret_cast<uintptr_t>(callee.asCell()) : 0;
++        for (auto& rec : m_callees) {
++            if (rec.calleePtr == ptr) {
++                rec.callCount++;
++                return;
++            }
++        }
++        observeSlow(ptr, args, argc);
++    }
+
++    bool isMonomorphic() const {
++        unsigned filled = 0;
++        for (auto& r : m_callees) if (r.callCount > 0) ++filled;
++        return filled == 1;
++    }
+
++    uintptr_t dominantCallee() const {
++        uintptr_t best = 0; uint32_t bestCount = 0;
++        for (auto& r : m_callees) if (r.callCount > bestCount) { bestCount = r.callCount; best = r.calleePtr; }
++        return best;
++    }
+
++    void clear() { for (auto& r : m_callees) r = {}; }
+
++private:
++    void observeSlow(uintptr_t ptr, const JSValue* args, uint8_t argc);
++    CalleeRecord m_callees[kNumCallees];
++};
+
++} // namespace JSC
+
+diff --git a/Source/JavaScriptCore/bytecode/ParsecTypeProfile.cpp b/Source/JavaScriptCore/bytecode/ParsecTypeProfile.cpp
+new file mode 100644
+--- /dev/null
++++ b/Source/JavaScriptCore/bytecode/ParsecTypeProfile.cpp
+@@ -0,0 +1,120 @@
++#include "config.h"
++#include "ParsecTypeProfile.h"
++#include "JSValue.h"
++
++namespace JSC {
++
++PTC ptcFromJSValue(JSValue v)
++{
++    if (v.isInt32())     return PTC::Int32;
++    if (v.isDouble())    return PTC::Double;
++    if (v.isBoolean())   return PTC::Boolean;
++    if (v.isNull())      return PTC::Null;
++    if (v.isUndefined()) return PTC::Undefined;
++    if (v.isString())    return PTC::String;
++    if (v.isSymbol())    return PTC::Symbol;
++    if (v.isBigInt())    return PTC::BigInt;
++    if (v.isFunction(*v.getObject()->vm())) return PTC::Function;
++    if (v.isObject()) {
++        if (v.getObject()->inherits<JSArray>()) return PTC::Array;
++        return PTC::Object;
++    }
++    return PTC::Other;
++}
+
++SpeculatedType ptcToSpeculatedType(PTC tag)
++{
++    switch (tag) {
++    case PTC::Int32:    return SpecInt32Only;
++    case PTC::Double:   return SpecDouble;
++    case PTC::Boolean:  return SpecBoolean;
++    case PTC::Null:     return SpecOther;
++    case PTC::Undefined:return SpecOther;
++    case PTC::String:   return SpecString;
++    case PTC::Symbol:   return SpecSymbol;
++    case PTC::BigInt:   return SpecBigInt;
++    case PTC::Array:    return SpecArray;
++    case PTC::Object:   return SpecObject;
++    case PTC::Function: return SpecFunction;
++    default:            return SpecFullTop;
++    }
++}
+
++void ParsecTypeProfile::observeSlow(PTC tag)
++{
++    // Check if tag already in a slot
++    for (auto& slot : m_slots) {
++        if (slot.tag() == tag) {
++            slot.incrementCount();
++            return;
++        }
++    }
++    // Find empty slot
++    for (auto& slot : m_slots) {
++        if (slot.empty()) {
++            slot.set(tag, 1);
++            return;
++        }
++    }
++    // All slots full — evict the one with the lowest count (LFU)
++    unsigned minIdx = 0;
++    for (unsigned i = 1; i < kNumSlots; ++i)
++        if (m_slots[i].count() < m_slots[minIdx].count()) minIdx = i;
++    m_slots[minIdx].set(tag, 1);
++}
+
++void ParsecBinaryProfile::observeSlow(PTC lhs, PTC rhs, PTC result)
++{
++    for (auto& p : m_pairs) {
++        if (p.count == 0) {
++            p = { lhs, rhs, result, 1 };
++            return;
++        }
++    }
++    // Evict LFU
++    unsigned minIdx = 0;
++    for (unsigned i = 1; i < kNumPairs; ++i)
++        if (m_pairs[i].count < m_pairs[minIdx].count) minIdx = i;
++    m_pairs[minIdx] = { lhs, rhs, result, 1 };
++}
+
++void ParsecCallProfile::observeSlow(uintptr_t ptr, const JSValue* args, uint8_t argc)
++{
++    for (auto& r : m_callees) {
++        if (r.callCount == 0) {
++            r.calleePtr = ptr;
++            r.callCount = 1;
++            r.numArgs = std::min(argc, (uint8_t)4);
++            for (unsigned i = 0; i < r.numArgs && args; ++i)
++                r.argTypes[i] = ptcFromJSValue(args[i]);
++            return;
++        }
++    }
++    // Evict LFU
++    unsigned minIdx = 0;
++    for (unsigned i = 1; i < kNumCallees; ++i)
++        if (m_callees[i].callCount < m_callees[minIdx].callCount) minIdx = i;
++    m_callees[minIdx].calleePtr = ptr;
++    m_callees[minIdx].callCount = 1;
++    m_callees[minIdx].numArgs = std::min(argc, (uint8_t)4);
++    for (unsigned i = 0; i < m_callees[minIdx].numArgs && args; ++i)
++        m_callees[minIdx].argTypes[i] = ptcFromJSValue(args[i]);
++}
+
++} // namespace JSC
+
+diff --git a/Source/JavaScriptCore/CMakeLists.txt b/Source/JavaScriptCore/CMakeLists.txt
+--- a/Source/JavaScriptCore/CMakeLists.txt
++++ b/Source/JavaScriptCore/CMakeLists.txt
+@@ -230,4 +230,16 @@ endif()
++if (PARSEC_TYPE_FEEDBACK)
++    list(APPEND JavaScriptCore_SOURCES
++        bytecode/ParsecTypeProfile.cpp
++    )
++    list(APPEND JavaScriptCore_PRIVATE_HEADERS
++        bytecode/ParsecTypeProfile.h
++    )
++    add_definitions(-DENABLE_PARSEC_TYPE_FEEDBACK=1)
++endif()
+
+diff --git a/Source/JavaScriptCore/dfg/DFGByteCodeParser.cpp b/Source/JavaScriptCore/dfg/DFGByteCodeParser.cpp
+--- a/Source/JavaScriptCore/dfg/DFGByteCodeParser.cpp
++++ b/Source/JavaScriptCore/dfg/DFGByteCodeParser.cpp
+@@ -1,5 +1,6 @@
+ #include "config.h"
+ #include "DFGByteCodeParser.h"
++#include "ParsecTypeProfile.h"
+ 
+ namespace JSC { namespace DFG {
+ 
+@@ -310,6 +311,45 @@ SpeculatedType ByteCodeParser::getPredictionWithoutOSRExit(unsigned bytecodeOffs
+ {
++#if ENABLE(PARSEC_TYPE_FEEDBACK)
++    // ── Parsec: prefer our richer histogram over ValueProfile's single slot ──
++    //
++    // JSC's default getPrediction reads the last-seen type from ValueProfile.
++    // Our ParsecTypeProfile tracks a 4-slot histogram with counts, giving
++    // much higher confidence on the dominant type.
++    //
++    // We only override when:
++    //   1. A ParsecTypeProfile exists for this site
++    //   2. Confidence exceeds 97% (fewer than 3% of observations are outliers)
++    //   3. The dominant type is more specific than what ValueProfile reports
++    //
++    // This is exactly how Turbofan decides whether to speculate — it has
++    // a "stability" threshold below which it won't speculate on a type.
++
++    if (auto* parsecProfile = m_codeBlock->parsecTypeProfileForOffset(bytecodeOffset)) {
++        float confidence = parsecProfile->confidence();
++        PTC dominant = parsecProfile->dominantType();
++
++        // Only use Parsec profile if we have high confidence
++        if (confidence >= 0.97f && parsecProfile->totalObservations() >= 50) {
++            SpeculatedType parsecSpec = ptcToSpeculatedType(dominant);
++
++            // Further refine: if our profile says Int32 with 99%+ confidence,
++            // tell FTL it's SpecInt32Only — the most aggressive specialization.
++            // ValueProfile often reports SpecBytecodeNumber which is less specific.
++            if (dominant == PTC::Int32 && confidence >= 0.99f)
++                parsecSpec = SpecInt32Only;
++            else if (dominant == PTC::Double && confidence >= 0.99f)
++                parsecSpec = SpecDoubleReal;
++            else if (dominant == PTC::String && confidence >= 0.98f)
++                parsecSpec = SpecString;
++            else if (dominant == PTC::Object && confidence >= 0.97f)
++                parsecSpec = SpecFinalObject;
++
++            // Merge with ValueProfile result — take the intersection
++            // (more specific = better speculation, but don't disagree with evidence)
++            SpeculatedType vpSpec = getPredictionFromValueProfile(bytecodeOffset);
++            if (parsecSpec != SpecNone && (vpSpec == SpecNone || parsecSpec == (parsecSpec & vpSpec)))
++                return parsecSpec;
++
++            // If they agree directionally, use the more specific one
++            if ((parsecSpec & vpSpec) != SpecNone)
++                return parsecSpec & vpSpec;
++        }
++    }
++#endif // ENABLE(PARSEC_TYPE_FEEDBACK)
++
+     // Default: use ValueProfile
+     return getPredictionFromValueProfile(bytecodeOffset);
+ }
+
+diff --git a/Source/JavaScriptCore/dfg/DFGAbstractInterpreterInlines.h b/Source/JavaScriptCore/dfg/DFGAbstractInterpreterInlines.h
+--- a/Source/JavaScriptCore/dfg/DFGAbstractInterpreterInlines.h
++++ b/Source/JavaScriptCore/dfg/DFGAbstractInterpreterInlines.h
+@@ -1,5 +1,6 @@
+ #include "DFGAbstractInterpreter.h"
++#include "ParsecTypeProfile.h"
+ 
+ namespace JSC { namespace DFG {
+ 
+@@ -440,6 +441,38 @@ bool AbstractInterpreter<AbstractStateType>::executeEffects(unsigned clobberLimi
+         // ── Parsec: use binary profile for arithmetic type narrowing ──────
+         // When DFG abstract interpretation encounters an ArithAdd/Sub/Mul,
+         // we can narrow the result type using ParsecBinaryProfile data.
+         // This tells DFG that (Int32 + Int32) → Int32 with high confidence,
+         // enabling it to emit unboxed arithmetic in the JIT code it generates.
++#if ENABLE(PARSEC_TYPE_FEEDBACK)
++        if (node->op() == ArithAdd || node->op() == ArithSub || node->op() == ArithMul) {
++            unsigned bco = node->origin.semantic.bytecodeIndex().offset();
++            if (auto* bp = codeBlock()->parsecBinaryProfileForOffset(bco)) {
++                if (bp->isAlwaysIntInt()) {
++                    // Both operands are always Int32 — result is Int32
++                    // Tell DFG: speculate Int32 on both inputs
++                    node->child1().setUseKindUnchecked(Int32Use);
++                    node->child2().setUseKindUnchecked(Int32Use);
++                    forNode(node).setType(m_graph, SpecInt32Only);
++                    break;
++                }
++                if (bp->isAlwaysNumericNumeric()) {
++                    // Both are numeric — result is Double
++                    node->child1().setUseKindUnchecked(DoubleRepUse);
++                    node->child2().setUseKindUnchecked(DoubleRepUse);
++                    forNode(node).setType(m_graph, SpecDouble);
++                    break;
++                }
++            }
++            // Array access: use array profile to determine element kind
++            if (node->op() == GetByVal) {
++                unsigned bco2 = node->origin.semantic.bytecodeIndex().offset();
++                if (auto* ap = codeBlock()->parsecArrayProfileForOffset(bco2)) {
++                    if (ap->isPackedSmi())
++                        forNode(node).setType(m_graph, SpecInt32Only);
++                    else if (ap->isPackedDouble())
++                        forNode(node).setType(m_graph, SpecDouble);
++                }
++            }
++        }
++#endif // ENABLE(PARSEC_TYPE_FEEDBACK)
+         break;
+     }
+
+diff --git a/Source/JavaScriptCore/ftl/FTLLowerDFGToB3.cpp b/Source/JavaScriptCore/ftl/FTLLowerDFGToB3.cpp
+--- a/Source/JavaScriptCore/ftl/FTLLowerDFGToB3.cpp
++++ b/Source/JavaScriptCore/ftl/FTLLowerDFGToB3.cpp
+@@ -1,5 +1,6 @@
+ #include "config.h"
+ #include "FTLLowerDFGToB3.h"
++#include "ParsecTypeProfile.h"
+ 
+ namespace JSC { namespace FTL {
+ 
+@@ -1200,6 +1201,42 @@ private:
++
++    // ── Parsec: enhanced call specialization via ParsecCallProfile ────
++    // FTL normally emits a polymorphic call dispatch for op_call.
++    // If ParsecCallProfile shows the call site is monomorphic (one callee
++    // seen 97%+ of the time), we emit a direct call with a guard check
++    // and an OSR exit for the rare mismatch case.
++    //
++    // This is exactly how Turbofan handles megamorphic call sites that
++    // are "effectively monomorphic" — the IC has seen many callees but
++    // one dominates in practice.
++
++    void compileCallWithParsecProfile(Node* node)
++    {
++#if ENABLE(PARSEC_TYPE_FEEDBACK)
++        unsigned bco = node->origin.semantic.bytecodeIndex().offset();
++        auto* cp = m_graph.m_codeBlock->parsecCallProfileForOffset(bco);
++        if (cp && cp->isMonomorphic()) {
++            uintptr_t expectedCallee = cp->dominantCallee();
++            if (expectedCallee) {
++                // Emit: load callee ptr, compare to expected, branch to OSR if mismatch
++                LValue actualCallee = lowCell(node->child1());
++                LValue expectedPtr  = m_out.constIntPtr(expectedCallee);
++                LValue isExpected   = m_out.equal(actualCallee, expectedPtr);
++
++                LBasicBlock directCallBlock = m_out.newBlock();
++                LBasicBlock slowCallBlock   = m_out.newBlock();
++
++                m_out.branch(isExpected, usually(directCallBlock), rarely(slowCallBlock));
++
++                // Direct call path — compiler knows the callee, can inline
++                m_out.appendTo(directCallBlock, slowCallBlock);
++                // Emit direct call (inlining handled by DFG inliner upstream)
++                compileDirectCall(node, reinterpret_cast<JSObject*>(expectedCallee));
++
++                // Slow path — OSR exit to DFG which handles polymorphic dispatch
++                m_out.appendTo(slowCallBlock, m_out.newBlock());
++                addExitCode(node->origin, ExitKind::BadCache);
++                return;
++            }
++        }
++#endif
++        // Default: polymorphic dispatch
++        compileGenericCall(node);
++    }

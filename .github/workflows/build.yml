@@ -1,0 +1,129 @@
+name: Build Parsec Android APK
+
+on:
+  push:
+    branches: [ "main", "master", "develop" ]
+  pull_request:
+    branches: [ "main", "master" ]
+  workflow_dispatch:
+
+env:
+  CARGO_TERM_COLOR: always
+  ANDROID_NDK_VERSION: "26.3.11579264"
+  RUST_VERSION: "1.78.0"
+
+jobs:
+  build:
+    name: Build Debug APK
+    runs-on: ubuntu-latest
+    timeout-minutes: 60
+
+    steps:
+      # ── Checkout ────────────────────────────────────────────────────────────
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      # ── Java (required by Gradle) ────────────────────────────────────────────
+      - name: Set up JDK 17
+        uses: actions/setup-java@v4
+        with:
+          java-version: '17'
+          distribution: 'temurin'
+          cache: gradle
+
+      # ── Gradle wrapper jar bootstrap ─────────────────────────────────────────
+      # The binary gradle-wrapper.jar cannot be stored as a text file.
+      # This step downloads the official jar and verifies its SHA-256 checksum.
+      - name: Bootstrap gradle-wrapper.jar
+        run: |
+          WRAPPER_JAR="android/gradle/wrapper/gradle-wrapper.jar"
+          EXPECTED_SHA="1f3067073041bc44554d0efe5d402a33bc3d3c93cc39ab684f308586d732a80d"
+          curl -sL \
+            "https://services.gradle.org/distributions/gradle-8.6-wrapper.jar" \
+            -o "$WRAPPER_JAR"
+          ACTUAL_SHA=$(sha256sum "$WRAPPER_JAR" | cut -d' ' -f1)
+          if [ "$ACTUAL_SHA" != "$EXPECTED_SHA" ]; then
+            echo "ERROR: gradle-wrapper.jar checksum mismatch!"
+            echo "  expected: $EXPECTED_SHA"
+            echo "  actual:   $ACTUAL_SHA"
+            exit 1
+          fi
+          echo "gradle-wrapper.jar verified OK"
+
+      # ── Android SDK / NDK ────────────────────────────────────────────────────
+      - name: Set up Android SDK
+        uses: android-actions/setup-android@v3
+
+      - name: Install Android NDK
+        run: |
+          sdkmanager --install "ndk;${{ env.ANDROID_NDK_VERSION }}"
+          echo "ANDROID_NDK_HOME=$ANDROID_HOME/ndk/${{ env.ANDROID_NDK_VERSION }}" >> $GITHUB_ENV
+          echo "NDK_HOME=$ANDROID_HOME/ndk/${{ env.ANDROID_NDK_VERSION }}"          >> $GITHUB_ENV
+
+      # ── Rust toolchain ───────────────────────────────────────────────────────
+      - name: Install Rust
+        uses: dtolnay/rust-toolchain@stable
+        with:
+          toolchain: ${{ env.RUST_VERSION }}
+          targets: aarch64-linux-android,x86_64-linux-android
+
+      - name: Cache Rust dependencies
+        uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: "src-rust -> target"
+
+      # ── Cargo linker config ──────────────────────────────────────────────────
+      # Tell Cargo which linkers to use for Android cross-compilation.
+      - name: Configure Cargo for Android cross-compilation
+        run: |
+          mkdir -p ~/.cargo
+          NDK_TOOLCHAIN="$ANDROID_NDK_HOME/toolchains/llvm/prebuilt/linux-x86_64/bin"
+          cat >> ~/.cargo/config.toml << EOF
+          [target.aarch64-linux-android]
+          linker = "$NDK_TOOLCHAIN/aarch64-linux-android26-clang"
+          ar     = "$NDK_TOOLCHAIN/llvm-ar"
+
+          [target.x86_64-linux-android]
+          linker = "$NDK_TOOLCHAIN/x86_64-linux-android26-clang"
+          ar     = "$NDK_TOOLCHAIN/llvm-ar"
+          EOF
+
+      # ── Rust check ──────────────────────────────────────────────────────────
+      - name: cargo check (aarch64-linux-android)
+        working-directory: src-rust
+        run: cargo check --target aarch64-linux-android
+        env:
+          ANDROID_NDK_HOME: ${{ env.ANDROID_NDK_HOME }}
+
+      # ── Gradle build ────────────────────────────────────────────────────────
+      - name: Make gradlew executable
+        run: chmod +x android/gradlew
+
+      - name: Build debug APK
+        working-directory: android
+        run: ./gradlew assembleDebug --stacktrace --no-daemon
+        env:
+          ANDROID_NDK_HOME: ${{ env.ANDROID_NDK_HOME }}
+
+      # ── Upload artifact ──────────────────────────────────────────────────────
+      - name: Upload debug APK
+        uses: actions/upload-artifact@v4
+        with:
+          name: parsec-browser-debug-${{ github.sha }}
+          path: android/app/build/outputs/apk/debug/app-debug.apk
+          retention-days: 30
+
+      # ── Build summary ────────────────────────────────────────────────────────
+      - name: APK info
+        if: success()
+        run: |
+          APK="android/app/build/outputs/apk/debug/app-debug.apk"
+          echo "## Build Summary" >> $GITHUB_STEP_SUMMARY
+          echo "✅ **APK built successfully**" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "| Property | Value |" >> $GITHUB_STEP_SUMMARY
+          echo "|----------|-------|" >> $GITHUB_STEP_SUMMARY
+          echo "| File | \`app-debug.apk\` |" >> $GITHUB_STEP_SUMMARY
+          echo "| Size | $(du -sh $APK | cut -f1) |" >> $GITHUB_STEP_SUMMARY
+          echo "| Commit | \`${{ github.sha }}\` |" >> $GITHUB_STEP_SUMMARY
+          echo "| Branch | \`${{ github.ref_name }}\` |" >> $GITHUB_STEP_SUMMARY

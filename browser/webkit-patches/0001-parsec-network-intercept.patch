@@ -1,0 +1,263 @@
+From: Parsec Web <patches@parsec.os>
+Date: 2026-02-03
+Subject: [PATCH 1/4] Add Parsec network interception hooks to ResourceLoader
+
+Adds a compile-time optional callback interface to WebCore's ResourceLoader
+so Parsec can intercept, inspect, modify, or block any network request at
+the engine level — including subresources, service worker fetches, WebSocket
+upgrades, WebRTC TURN requests, and media segment fetches.
+
+This is deeper than WKURLSchemeHandler (which only handles custom schemes)
+and deeper than WKContentRuleList (which only pattern-matches URLs).
+This hook fires for EVERY byte that would cross the network, with full
+access to request headers, POST bodies, and the ability to synthesize
+a response from Rust.
+
+Files modified:
+  Source/WebCore/loader/ResourceLoader.h
+  Source/WebCore/loader/ResourceLoader.cpp
+  Source/WebCore/loader/ResourceLoaderOptions.h
+  Source/WebKit/WebProcess/Network/WebLoaderStrategy.cpp
+  Source/WebKit/WebProcess/Network/WebLoaderStrategy.h
+---
+
+diff --git a/Source/WebCore/loader/ResourceLoader.h b/Source/WebCore/loader/ResourceLoader.h
+--- a/Source/WebCore/loader/ResourceLoader.h
++++ b/Source/WebCore/loader/ResourceLoader.h
+@@ -1,5 +1,6 @@
+ #pragma once
+ 
++#include "ParsecNetworkDelegate.h"
+ #include "ResourceHandleClient.h"
+ #include "ResourceRequest.h"
+ #include "ResourceResponse.h"
+@@ -45,6 +46,15 @@ class ResourceLoader : public RefCounted<ResourceLoader>, public ResourceHandleC
+ 
+     virtual void didFinishLoading(const NetworkLoadMetrics&);
+     virtual void didFail(const ResourceError&);
++
++#if ENABLE(PARSEC_NETWORK_INTERCEPT)
++    // Parsec network interception — called before any network activity.
++    // If delegate returns a ParsecNetworkDecision::Block, the load is cancelled
++    // and a synthetic response is returned.
++    // If delegate returns ParsecNetworkDecision::Redirect, the URL is replaced.
++    // If delegate returns ParsecNetworkDecision::Allow, proceeds normally.
++    static ParsecNetworkDelegate* sharedDelegate();
++    static void setSharedDelegate(ParsecNetworkDelegate*);
++#endif
+ 
+ protected:
+     ResourceLoader(DocumentLoader&, ResourceLoaderOptions);
+@@ -52,6 +62,9 @@ class ResourceLoader : public RefCounted<ResourceLoader>, public ResourceHandleC
+ 
+ private:
+     bool m_reachedTerminalState { false };
++#if ENABLE(PARSEC_NETWORK_INTERCEPT)
++    static ParsecNetworkDelegate* s_parsecDelegate;
++#endif
+ };
+ 
+ } // namespace WebCore
+
+diff --git a/Source/WebCore/loader/ResourceLoader.cpp b/Source/WebCore/loader/ResourceLoader.cpp
+--- a/Source/WebCore/loader/ResourceLoader.cpp
++++ b/Source/WebCore/loader/ResourceLoader.cpp
+@@ -1,5 +1,6 @@
+ #include "config.h"
+ #include "ResourceLoader.h"
++#include "ParsecNetworkDelegate.h"
+ 
+ #include "DocumentLoader.h"
+ #include "Frame.h"
+@@ -40,6 +41,51 @@ namespace WebCore {
+ 
++#if ENABLE(PARSEC_NETWORK_INTERCEPT)
++ParsecNetworkDelegate* ResourceLoader::s_parsecDelegate = nullptr;
++
++ParsecNetworkDelegate* ResourceLoader::sharedDelegate()
++{
++    return s_parsecDelegate;
++}
++
++void ResourceLoader::setSharedDelegate(ParsecNetworkDelegate* delegate)
++{
++    s_parsecDelegate = delegate;
++}
++#endif
++
+ void ResourceLoader::init(ResourceRequest&& request, CompletionHandler<void(bool)>&& completionHandler)
+ {
+     ASSERT(!m_reachedTerminalState);
++
++#if ENABLE(PARSEC_NETWORK_INTERCEPT)
++    if (s_parsecDelegate) {
++        ParsecNetworkRequest parsecReq;
++        parsecReq.url        = request.url().string().utf8().data();
++        parsecReq.method     = request.httpMethod().utf8().data();
++        parsecReq.resourceType = resourceTypeString(m_options.type);
++
++        // Copy request headers
++        for (auto& header : request.httpHeaderFields()) {
++            parsecReq.headers.emplace_back(
++                header.key.utf8().data(),
++                header.value.utf8().data()
++            );
++        }
++
++        // Copy POST body (up to 64KB for inspection)
++        if (request.httpBody()) {
++            auto& elements = request.httpBody()->elements();
++            size_t total = 0;
++            for (auto& el : elements) {
++                if (el.type == FormDataElement::Type::Data) {
++                    size_t take = std::min(el.data.size(), (size_t)65536 - total);
++                    parsecReq.body.insert(parsecReq.body.end(), el.data.begin(), el.data.begin() + take);
++                    total += take;
++                    if (total >= 65536) break;
++                }
++            }
++        }
++
++        ParsecNetworkDecision decision = s_parsecDelegate->shouldAllowRequest(parsecReq);
++
++        switch (decision.action) {
++        case ParsecNetworkAction::Block: {
++            // Synthesize blocked response
++            ResourceResponse blockedResponse(request.url(), "text/html"_s,
++                decision.syntheticBody.size(), "UTF-8"_s);
++            blockedResponse.setHTTPStatusCode(200);
++            didReceiveResponse(blockedResponse, []{});
++            if (!decision.syntheticBody.empty()) {
++                auto data = SharedBuffer::create(decision.syntheticBody.data(),
++                    decision.syntheticBody.size());
++                didReceiveData(data.get(), decision.syntheticBody.size(), DataPayloadType::DataPayloadWholeResource);
++            }
++            didFinishLoading({ });
++            completionHandler(false);
++            return;
++        }
++        case ParsecNetworkAction::Redirect:
++            request.setURL(URL { URL { }, String::fromUTF8(decision.redirectUrl.c_str()) });
++            break;
++        case ParsecNetworkAction::ModifyHeaders:
++            for (auto& [k, v] : decision.addHeaders)
++                request.setHTTPHeaderField(AtomString::fromUTF8(k.c_str()), String::fromUTF8(v.c_str()));
++            for (auto& k : decision.removeHeaders)
++                request.clearHTTPHeaderField(AtomString::fromUTF8(k.c_str()));
++            break;
++        case ParsecNetworkAction::Allow:
++        default:
++            break;
++        }
++    }
++#endif
++
+     m_request = WTFMove(request);
+     completionHandler(true);
+ }
+
+diff --git a/Source/WebCore/loader/ParsecNetworkDelegate.h b/Source/WebCore/loader/ParsecNetworkDelegate.h
+new file mode 100644
+--- /dev/null
++++ b/Source/WebCore/loader/ParsecNetworkDelegate.h
+@@ -0,0 +1,75 @@
++#pragma once
++// ================================================================
++//  ParsecNetworkDelegate.h
++//  Parsec Web — engine-level network interception interface
++//
++//  This header defines the C++ interface that Parsec's Rust code
++//  implements via extern "C" FFI. The Rust side registers a delegate
++//  at startup; WebCore calls it for every network request.
++// ================================================================
++
++#include <string>
++#include <vector>
++#include <functional>
++
++namespace WebCore {
++
++enum class ParsecNetworkAction : uint8_t {
++    Allow         = 0,  // Let it through
++    Block         = 1,  // Drop + optional synthetic response
++    Redirect      = 2,  // Replace URL
++    ModifyHeaders = 3,  // Add/remove request headers
++};
++
++struct ParsecNetworkRequest {
++    std::string url;
++    std::string method;
++    std::string resourceType;  // "document","script","image","xhr","fetch","websocket",...
++    std::vector<std::pair<std::string, std::string>> headers;
++    std::vector<uint8_t> body;   // POST body, up to 64KB
++    bool isMainFrame       { false };
++    bool isServiceWorker   { false };
++    bool isWebAssembly     { false };
++};
++
++struct ParsecNetworkDecision {
++    ParsecNetworkAction action { ParsecNetworkAction::Allow };
++    std::string redirectUrl;
++    std::string syntheticBody;
++    std::vector<std::pair<std::string, std::string>> addHeaders;
++    std::vector<std::string> removeHeaders;
++};
++
++// ── Abstract delegate — implemented by Parsec's Rust FFI layer ────
++class ParsecNetworkDelegate {
++public:
++    virtual ~ParsecNetworkDelegate() = default;
++
++    // Called synchronously on the WebKit network thread for every request.
++    // Must return quickly (< 1ms) — do hash-set lookups, not blocking I/O.
++    virtual ParsecNetworkDecision shouldAllowRequest(const ParsecNetworkRequest&) = 0;
++
++    // Called when a response is received — allows header inspection/modification
++    virtual void onResponse(const std::string& url, int statusCode,
++        const std::vector<std::pair<std::string, std::string>>& headers) {}
++
++    // Called when a request completes
++    virtual void onComplete(const std::string& url, size_t bytesReceived, double durationMs) {}
++
++    // Called when a request fails
++    virtual void onError(const std::string& url, const std::string& error) {}
++
++    // Called from navigator.parsec.blockRequest()
++    virtual void addDynamicBlock(const std::string& url) {}
++
++    // Stats struct returned by getStats()
++    struct ParsecStatsData {
++        uint64_t adsBlocked      { 0 };
++        uint64_t trackersBlocked { 0 };
++        uint64_t bytesSaved      { 0 };
++        uint64_t requestsTotal   { 0 };
++    };
++    virtual ParsecStatsData getStats() const { return {}; }
++};
++
++// ── C FFI shim — called from Rust via extern "C" ─────────────────
++// Rust implements parsec_network_should_allow and registers it here
++extern "C" {
++    typedef struct ParsecNetworkDecisionC {
++        uint8_t  action;
++        char     redirectUrl[2048];
++        char     syntheticBody[65536];
++        bool     hasRedirect;
++        bool     hasSyntheticBody;
++    } ParsecNetworkDecisionC;
++
++    // Set from Rust at startup:
++    void parsec_set_network_delegate(ParsecNetworkDelegate* delegate);
++    ParsecNetworkDelegate* parsec_get_network_delegate();
++
++    // Convenience C accessors used by NavigatorParsec.cpp
++    inline ParsecNetworkDelegate* ParsecNetworkDelegate_get() { return parsec_get_network_delegate(); }
++
++    // Called from NavigatorParsec to post a message to the Parsec chrome WebView
++    typedef void (*ParsecChromeMessageFn)(const char* json);
++    void parsec_set_chrome_message_fn(ParsecChromeMessageFn fn);
++    ParsecChromeMessageFn parsec_get_chrome_message_fn();
++    inline ParsecChromeMessageFn ParsecPostChromeMessage_get() { return parsec_get_chrome_message_fn(); }
++}
++
++} // namespace WebCore

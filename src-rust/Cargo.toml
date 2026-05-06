@@ -1,0 +1,113 @@
+[package]
+name        = "parsec-core"
+version     = "1.4.0"
+edition     = "2021"
+description = "Parsec Browser Android core — network, blocking, sync, GPU renderer, profile, ghost mode"
+
+[lib]
+name       = "parsec_core"
+crate-type = ["cdylib"]
+
+[dependencies]
+
+# ── JNI bridge ────────────────────────────────────────────────────────────────
+# "invocation" feature only needed when Rust starts the JVM (not our case),
+# but harmless; keep it so it matches the existing JNIEnv usage.
+jni = { version = "0.21", features = ["invocation"] }
+
+# ── Async runtime ─────────────────────────────────────────────────────────────
+tokio = { version = "1", features = [
+    "rt-multi-thread", "net", "time", "sync", "io-util", "macros"
+] }
+futures-util = "0.3"
+# pollster: sync block_on for wgpu adapter/device requests in neutron_android.rs
+pollster = "0.3"
+
+# ── HTTP client ───────────────────────────────────────────────────────────────
+# rustls-tls: no OpenSSL dep, smaller binary, works on Android without NDK openssl.
+# json + stream + gzip/brotli/deflate for full response handling.
+reqwest = { version = "0.12", default-features = false, features = [
+    "rustls-tls", "http2", "gzip", "brotli", "deflate", "stream", "json"
+] }
+
+# ── TLS stack ─────────────────────────────────────────────────────────────────
+# Pin to ring backend so rustls, ring, and chacha20poly1305 all use the same
+# ring version and don't pull in two copies of ring's asm routines.
+rustls              = { version = "0.23", default-features = false, features = ["ring", "tls12"] }
+rustls-native-certs = "0.7"
+webpki-roots        = "0.26"
+# ring is used directly in sync.rs (PBKDF2-HMAC-SHA256) and via rustls.
+# Declaring it here pins the version so it doesn't conflict with reqwest's copy.
+ring = "0.17"
+
+# ── Cryptography ──────────────────────────────────────────────────────────────
+# chacha20poly1305: used in phantom.rs (Ghost Mode) and sync.rs.
+# Declared once — both files import from the same crate.
+chacha20poly1305 = { version = "0.10", features = ["std"] }
+# sha2: used in smart_cache.rs for content-hash deduplication.
+sha2 = { version = "0.10", default-features = false, features = ["std"] }
+# getrandom: needed on Android to seed OS RNG correctly (feature "js" not needed on Android).
+getrandom = { version = "0.2", features = ["std"] }
+# rand: used in phantom.rs (rand::thread_rng) and sync.rs.
+rand = "0.8"
+
+# ── Encoding ──────────────────────────────────────────────────────────────────
+# base64 0.22 is the current release; phantom.rs uses Engine::encode API (0.21+).
+# Declare once here — the "0.21" duplicate in the old file is removed.
+base64 = { version = "0.22", features = ["alloc"] }
+# hex: used in sync.rs for device_id encoding.
+hex = "0.4"
+# uuid: profile.rs / sync.rs tab/session IDs.
+uuid = { version = "1", features = ["v4"] }
+# percent-encoding: URL encoding in getSuggestions.
+percent-encoding = "2"
+
+# ── GPU renderer ──────────────────────────────────────────────────────────────
+# wgpu 0.19 uses raw-window-handle 0.6 — versions must match exactly.
+# SurfaceTargetUnsafe::RawHandle is stable in 0.19; no extra features needed.
+wgpu              = { version = "0.19", features = ["wgsl"] }
+raw-window-handle = "0.6"
+# bytemuck: vertex/uniform buffer casting in neutron_android.rs.
+bytemuck = { version = "1.14", features = ["derive"] }
+
+# ── SDF glyph rasteriser ──────────────────────────────────────────────────────
+ttf-parser = "0.21"
+
+# ── Extension store ───────────────────────────────────────────────────────────
+# zip 0.6 is the last version with the simple deflate/stored API used in extension_store.rs.
+zip = { version = "0.6", default-features = false, features = ["deflate", "stored"] }
+
+# ── Serialisation ─────────────────────────────────────────────────────────────
+serde      = { version = "1", features = ["derive"] }
+serde_json = "1"
+
+# ── URL / MIME ────────────────────────────────────────────────────────────────
+url        = "2"
+mime_guess = "2"
+
+# ── Utilities ─────────────────────────────────────────────────────────────────
+once_cell   = "1"
+parking_lot = "0.12"
+anyhow      = "1"
+
+# ── Logging ───────────────────────────────────────────────────────────────────
+# tracing + tracing-subscriber declared once.
+# tracing-android routes events to Android logcat via __android_log_write.
+tracing            = "0.1"
+tracing-subscriber = { version = "0.3", features = ["env-filter"] }
+tracing-android    = "0.2"
+
+# ── Profile (local file I/O) ──────────────────────────────────────────────────
+# No extra crates needed — profile.rs uses std::fs + serde_json.
+
+[profile.release]
+opt-level     = "z"   # minimise binary size (most important for mobile)
+lto           = true
+codegen-units = 1
+panic         = "abort"
+strip         = true
+debug         = false
+
+[profile.dev]
+opt-level = 1
+panic     = "unwind"

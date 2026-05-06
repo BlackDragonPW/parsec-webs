@@ -1,0 +1,35 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <!-- ── Base app theme (dark) ──────────────────────────────────────── -->
+    <style name="Theme.ParsecBrowser" parent="Theme.MaterialComponents.DayNight.NoActionBar">
+        <item name="colorPrimary">@color/accent</item>
+        <item name="colorPrimaryDark">@color/accent_dark</item>
+        <item name="colorAccent">@color/accent</item>
+        <item name="android:windowBackground">@color/background</item>
+        <item name="android:statusBarColor">@android:color/transparent</item>
+        <item name="android:navigationBarColor">@android:color/transparent</item>
+        <item name="android:windowLightStatusBar">false</item>
+        <item name="android:windowLightNavigationBar">false</item>
+        <item name="android:textColorPrimary">@color/text_primary</item>
+        <item name="android:textColorSecondary">@color/text_secondary</item>
+    </style>
+
+    <!-- ── No-action-bar variant (used by BrowserActivity) ───────────── -->
+    <style name="Theme.ParsecBrowser.NoActionBar">
+        <item name="windowActionBar">false</item>
+        <item name="windowNoTitle">true</item>
+        <item name="android:windowDrawsSystemBarBackgrounds">true</item>
+        <item name="android:statusBarColor">@android:color/transparent</item>
+        <item name="android:navigationBarColor">@android:color/transparent</item>
+    </style>
+
+    <!-- ── Bottom sheet theme ─────────────────────────────────────────── -->
+    <style name="Theme.ParsecBrowser.BottomSheet" parent="Theme.MaterialComponents.BottomSheetDialog">
+        <item name="android:background">@color/surface</item>
+        <item name="bottomSheetStyle">@style/ParsecBottomSheetStyle</item>
+    </style>
+
+    <style name="ParsecBottomSheetStyle" parent="Widget.MaterialComponents.BottomSheet.Modal">
+        <item name="android:background">@color/surface</item>
+    </style>
+</resources>

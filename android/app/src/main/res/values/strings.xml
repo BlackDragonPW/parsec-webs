@@ -1,0 +1,18 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="app_name">Parsec Browser</string>
+    <string name="search_hint">Search or enter URL</string>
+    <string name="new_tab">New Tab</string>
+    <string name="close_tab">Close tab</string>
+    <string name="back">Back</string>
+    <string name="forward">Forward</string>
+    <string name="reload">Reload</string>
+    <string name="stop">Stop</string>
+    <string name="menu">Menu</string>
+    <string name="bookmark_added">Bookmarked!</string>
+    <string name="downloading">Downloading %1$s…</string>
+    <string name="no_app_found">No app to open this URL</string>
+    <string name="connection_secure">Connection is secure</string>
+    <string name="connection_insecure">Connection is not secure</string>
+    <string name="tab_count_format">%1$d</string>
+</resources>

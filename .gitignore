@@ -1,0 +1,43 @@
+# ── Android ───────────────────────────────────────────────────────────────────
+*.iml
+.gradle/
+# local.properties is machine-specific (sdk.dir, ndk.dir). Use local.properties.example as template.
+android/local.properties
+local.properties
+/.idea/
+# gradle-wrapper.jar is a binary bootstrap file — NOT stored in git.
+# CI downloads it via .github/workflows/build.yml (checksum verified).
+# Locally: run `gradle wrapper --gradle-version 8.6` or see SETUP.md.
+android/gradle/wrapper/gradle-wrapper.jar
+.DS_Store
+/build
+/captures
+.externalNativeBuild
+.cxx
+*.apk
+*.aab
+*.ap_
+
+# ── Rust / Cargo ──────────────────────────────────────────────────────────────
+target/
+Cargo.lock
+**/*.rs.bk
+
+# ── Node / Web ────────────────────────────────────────────────────────────────
+node_modules/
+dist/
+.env
+.env.local
+
+# ── Tauri ─────────────────────────────────────────────────────────────────────
+browser/src-tauri/target/
+
+# ── macOS ─────────────────────────────────────────────────────────────────────
+.DS_Store
+*.xcuserstate
+
+# ── Keys / secrets ────────────────────────────────────────────────────────────
+*.keystore
+*.jks
+key.properties
+google-services.json

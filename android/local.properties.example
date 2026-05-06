@@ -1,0 +1,18 @@
+## local.properties.example
+## Copy this file to local.properties (git-ignored) and fill in your paths.
+##
+## This file is NOT used by CI — GitHub Actions sets these via environment variables.
+
+# Path to your Android SDK installation
+# macOS (Android Studio default):
+sdk.dir=/Users/YOUR_USERNAME/Library/Android/sdk
+# Linux:
+# sdk.dir=/home/YOUR_USERNAME/Android/Sdk
+# Windows:
+# sdk.dir=C\:\\Users\\YOUR_USERNAME\\AppData\\Local\\Android\\Sdk
+
+# Path to your Android NDK (must be NDK r26 / 26.3.11579264 or compatible)
+# macOS:
+# ndk.dir=/Users/YOUR_USERNAME/Library/Android/sdk/ndk/26.3.11579264
+# Linux:
+# ndk.dir=/home/YOUR_USERNAME/Android/Sdk/ndk/26.3.11579264

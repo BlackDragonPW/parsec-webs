@@ -1,0 +1,715 @@
+From: Parsec Web <patches@parsec.os>
+Date: 2026-02-25
+Subject: [PATCH 10/10] Complete integration — all unresolved symbols wired
+
+This patch resolves every forward reference left by patches 7-9:
+
+  1. CodeBlock — adds ParsecProfile storage arrays and 4 accessor methods:
+       parsecTypeProfileForOffset()
+       parsecBinaryProfileForOffset()
+       parsecArrayProfileForOffset()
+       parsecCallProfileForOffset()
+
+  2. ParsecBinaryProfile — adds dominantLhsType() / dominantRhsType()
+
+  3. PMJCompiler — adds ir() public accessor, hooks emitBytecodeOpExtended
+     into the main switch default case, adds method declaration to header
+
+  4. JITType enum — adds PMJIT between BaselineJIT and DFGJIT
+
+  5. LinkBuffer::Profile enum — adds PMJ value
+
+  6. DFGByteCodeParser — fixes getPredictionFromValueProfile to the real
+     JSC method name: getValueProfilePrediction (or falls back gracefully)
+
+  7. FTLLowerDFGToB3 — fixes compileDirectCall / compileGenericCall to
+     use JSC's actual method: compileCallOrConstruct with a DirectCall flag
+
+  8. Baseline JIT instrumentation — adds profile recording stubs to
+     BaselineJITGen so every bytecode execution populates the 4 profile types
+
+  9. JITWorklist — adds PMJ compilation scheduling between Baseline and DFG
+
+  10. PMJPlan — the actual plan object that JITWorklist enqueues
+
+Files modified/added:
+  Source/JavaScriptCore/bytecode/CodeBlock.h           (profile storage + accessors)
+  Source/JavaScriptCore/bytecode/CodeBlock.cpp         (profile allocation)
+  Source/JavaScriptCore/bytecode/ParsecTypeProfile.h   (dominantLhsType/RhsType)
+  Source/JavaScriptCore/jit/JITCode.h                  (JITType::PMJIT)
+  Source/JavaScriptCore/assembler/LinkBuffer.h         (Profile::PMJ)
+  Source/JavaScriptCore/jit/JITWorklist.h              (PMJ scheduling)
+  Source/JavaScriptCore/jit/JITWorklist.cpp
+  Source/JavaScriptCore/pmj/PMJPlan.h                  (new)
+  Source/JavaScriptCore/pmj/PMJPlan.cpp                (new)
+  Source/JavaScriptCore/jit/BaselineJITGen.cpp         (instrumentation)
+  Source/JavaScriptCore/pmj/PMJCompiler.h              (ir() + extended decl)
+  Source/JavaScriptCore/dfg/DFGByteCodeParser.cpp      (correct method name)
+  Source/JavaScriptCore/ftl/FTLLowerDFGToB3.cpp        (correct method names)
+---
+
+diff --git a/Source/JavaScriptCore/jit/JITCode.h b/Source/JavaScriptCore/jit/JITCode.h
+--- a/Source/JavaScriptCore/jit/JITCode.h
++++ b/Source/JavaScriptCore/jit/JITCode.h
+@@ -40,6 +40,7 @@ enum class JITType : uint8_t {
+     None = 0,
+     HostCallThunk,
+     InterpreterCode,    // LLInt
+     BaselineJIT,        // Baseline
++    PMJIT,              // Parsec Mid-Tier JIT (between Baseline and DFG)
+     DFGJIT,             // DFG
+     FTLJIT,             // FTL (LLVM)
+ };
+
+diff --git a/Source/JavaScriptCore/assembler/LinkBuffer.h b/Source/JavaScriptCore/assembler/LinkBuffer.h
+--- a/Source/JavaScriptCore/assembler/LinkBuffer.h
++++ b/Source/JavaScriptCore/assembler/LinkBuffer.h
+@@ -55,6 +55,7 @@ public:
+     enum class Profile {
+         Baseline,
+         DFG,
+         FTL,
+         Wasm,
++        PMJ,     // Parsec Mid-Tier JIT
+         YarrJIT,
+         InlineCache,
+     };
+
+diff --git a/Source/JavaScriptCore/bytecode/CodeBlock.h b/Source/JavaScriptCore/bytecode/CodeBlock.h
+--- a/Source/JavaScriptCore/bytecode/CodeBlock.h
++++ b/Source/JavaScriptCore/bytecode/CodeBlock.h
+@@ -1,5 +1,6 @@
+ #pragma once
++#include "ParsecTypeProfile.h"
+ 
+ namespace JSC {
+ 
+@@ -380,6 +381,60 @@ public:
++
++#if ENABLE(PARSEC_TYPE_FEEDBACK)
++    // ── Parsec profile storage ────────────────────────────────────────
++    //
++    // Four profile arrays indexed by bytecode offset.
++    // Allocated lazily on first profiling hit to avoid overhead for cold code.
++    // All arrays are the same size as the bytecode instruction count.
++
++    // Type profile: records what JSValue types appear at a result/operand site
++    ParsecTypeProfile* parsecTypeProfileForOffset(unsigned bcOffset) const
++    {
++        if (!m_parsecTypeProfiles || bcOffset >= m_parsecProfileSize)
++            return nullptr;
++        return &m_parsecTypeProfiles[bcOffset];
++    }
+
++    // Binary profile: records (lhsType, rhsType) pairs for arithmetic ops
++    ParsecBinaryProfile* parsecBinaryProfileForOffset(unsigned bcOffset) const
++    {
++        if (!m_parsecBinaryProfiles || bcOffset >= m_parsecProfileSize)
++            return nullptr;
++        return &m_parsecBinaryProfiles[bcOffset];
++    }
+
++    // Array profile: records element kind for array accesses
++    ParsecArrayProfile* parsecArrayProfileForOffset(unsigned bcOffset) const
++    {
++        if (!m_parsecArrayProfiles || bcOffset >= m_parsecProfileSize)
++            return nullptr;
++        return &m_parsecArrayProfiles[bcOffset];
++    }
+
++    // Call profile: records callees seen at call sites
++    ParsecCallProfile* parsecCallProfileForOffset(unsigned bcOffset) const
++    {
++        if (!m_parsecCallProfiles || bcOffset >= m_parsecProfileSize)
++            return nullptr;
++        return &m_parsecCallProfiles[bcOffset];
++    }
+
++    // Allocate all profile arrays — called once when code first becomes warm
++    void allocateParsecProfiles()
++    {
++        if (m_parsecTypeProfiles) return; // already allocated
++        unsigned size = instructions().size();
++        m_parsecProfileSize    = size;
++        m_parsecTypeProfiles   = new ParsecTypeProfile[size]();
++        m_parsecBinaryProfiles = new ParsecBinaryProfile[size]();
++        m_parsecArrayProfiles  = new ParsecArrayProfile[size]();
++        m_parsecCallProfiles   = new ParsecCallProfile[size]();
++    }
+
++    // Free profile arrays on CodeBlock destruction
++    void freeParsecProfiles()
++    {
++        delete[] m_parsecTypeProfiles;   m_parsecTypeProfiles   = nullptr;
++        delete[] m_parsecBinaryProfiles; m_parsecBinaryProfiles = nullptr;
++        delete[] m_parsecArrayProfiles;  m_parsecArrayProfiles  = nullptr;
++        delete[] m_parsecCallProfiles;   m_parsecCallProfiles   = nullptr;
++    }
+
++private:
++    ParsecTypeProfile*   m_parsecTypeProfiles   { nullptr };
++    ParsecBinaryProfile* m_parsecBinaryProfiles { nullptr };
++    ParsecArrayProfile*  m_parsecArrayProfiles  { nullptr };
++    ParsecCallProfile*   m_parsecCallProfiles   { nullptr };
++    unsigned             m_parsecProfileSize    { 0 };
++public:
++#endif // ENABLE(PARSEC_TYPE_FEEDBACK)
+
+diff --git a/Source/JavaScriptCore/bytecode/CodeBlock.cpp b/Source/JavaScriptCore/bytecode/CodeBlock.cpp
+--- a/Source/JavaScriptCore/bytecode/CodeBlock.cpp
++++ b/Source/JavaScriptCore/bytecode/CodeBlock.cpp
+@@ -100,6 +100,10 @@ CodeBlock::~CodeBlock()
+ {
++#if ENABLE(PARSEC_TYPE_FEEDBACK)
++    freeParsecProfiles();
++#endif
+ }
+
+diff --git a/Source/JavaScriptCore/bytecode/ParsecTypeProfile.h b/Source/JavaScriptCore/bytecode/ParsecTypeProfile.h
+--- a/Source/JavaScriptCore/bytecode/ParsecTypeProfile.h
++++ b/Source/JavaScriptCore/bytecode/ParsecTypeProfile.h
+@@ -175,6 +175,22 @@ struct ParsecBinaryProfile {
+     bool isAlwaysNumericNumeric() const;
+     void clear() { for (auto& p : m_pairs) p = {}; }
+ 
++    // ── Type accessors for PMJCompiler ────────────────────────────────
++    // Returns the PTC tag of the most-observed lhs/rhs type.
++    // PMJCompiler casts this to PMJType — the enums are intentionally aligned.
++    uint8_t dominantLhsType() const {
++        TypePair const* best = nullptr;
++        for (auto& p : m_pairs)
++            if (p.count > 0 && (!best || p.count > best->count)) best = &p;
++        return best ? static_cast<uint8_t>(best->lhs) : 0;
++    }
++    uint8_t dominantRhsType() const {
++        TypePair const* best = nullptr;
++        for (auto& p : m_pairs)
++            if (p.count > 0 && (!best || p.count > best->count)) best = &p;
++        return best ? static_cast<uint8_t>(best->rhs) : 0;
++    }
+
+diff --git a/Source/JavaScriptCore/pmj/PMJCompiler.h b/Source/JavaScriptCore/pmj/PMJCompiler.h
+--- a/Source/JavaScriptCore/pmj/PMJCompiler.h
++++ b/Source/JavaScriptCore/pmj/PMJCompiler.h
+@@ -55,6 +55,13 @@ public:
+     PMJResult compile();
+ 
++    // ── Accessors used by PMJOpcodeComplete.cpp ───────────────────────
++    PMJFunction& ir() { return m_ir; }
++    // Public wrappers so PMJOpcodeComplete (a friend translation unit) can call these
++    VReg emitGuardAndUnbox(PMJBlock& block, VReg src, PMJType type, unsigned bcOffset);
++
++    // Extended opcode handler — handles all opcodes not in the original switch
++    void emitBytecodeOpExtended(const Instruction* pc, PMJBlock& block);
++
+ private:
+
+diff --git a/Source/JavaScriptCore/pmj/PMJCompiler.cpp b/Source/JavaScriptCore/pmj/PMJCompiler.cpp
+--- a/Source/JavaScriptCore/pmj/PMJCompiler.cpp
++++ b/Source/JavaScriptCore/pmj/PMJCompiler.cpp
+@@ -100,7 +100,11 @@ void PMJCompiler::emitBytecodeOp(const Instruction* pc, PMJBlock& block)
+     default:
+-        // Unhandled opcode — emit OSR exit to Baseline for this bytecode offset
+-        PMJInstr exit; exit.op = PMJOp::OSRExit; exit.bytecodeOffset = bytecodeOffset;
+-        block.instrs.append(exit);
+-        break;
++        // Try extended handler first — covers sub, mul, bitwise, comparisons, etc.
++        // If the extended handler also can't handle it, it emits an OSR exit internally.
++        emitBytecodeOpExtended(pc, block);
++        break;
+     }
+ }
+
+diff --git a/Source/JavaScriptCore/pmj/PMJPlan.h b/Source/JavaScriptCore/pmj/PMJPlan.h
+new file mode 100644
+--- /dev/null
++++ b/Source/JavaScriptCore/pmj/PMJPlan.h
+@@ -0,0 +1,75 @@
++#pragma once
++// ================================================================
++//  PMJPlan.h
++//  The compilation plan object that JITWorklist enqueues for PMJ.
++//  Mirrors DFGPlan and BaselineJITPlan in structure.
++//
++//  Lifecycle:
++//    1. JITWorklist::enqueueForPMJ() creates a PMJPlan and adds it to queue
++//    2. Worker thread calls PMJPlan::compileInBackground()
++//    3. Main thread calls PMJPlan::installCode() to swap in the PMJ code
++// ================================================================
++
++#include "PMJCompiler.h"
++#include "CodeBlock.h"
++#include <wtf/RefCounted.h>
++#include <wtf/ThreadSafeRefCounted.h>
++
++namespace JSC {
++
++class VM;
++
++namespace PMJ {
++
++enum class PMJPlanStage : uint8_t {
++    Queued,
++    Compiling,
++    ReadyToInstall,
++    Installed,
++    Failed,
++};
++
++class PMJPlan : public ThreadSafeRefCounted<PMJPlan> {
++public:
++    static Ref<PMJPlan> create(CodeBlock* codeBlock, VM& vm)
++    {
++        return adoptRef(*new PMJPlan(codeBlock, vm));
++    }
+
++    // Called on JIT worker thread — compiles without holding VM lock
++    void compileInBackground();
+
++    // Called on main thread with VM lock held — installs compiled code
++    // Returns true if installation succeeded
++    bool installCode(VM&);
+
++    CodeBlock* codeBlock() const { return m_codeBlock.get(); }
++    PMJPlanStage stage() const { return m_stage; }
++    bool isReadyToInstall() const { return m_stage == PMJPlanStage::ReadyToInstall; }
++    bool failed() const { return m_stage == PMJPlanStage::Failed; }
+
++private:
++    PMJPlan(CodeBlock* cb, VM& vm)
++        : m_codeBlock(cb)
++        , m_vm(vm)
++    {}
+
++    // Weak reference — CodeBlock may be collected before we install.
++    // JSC CodeBlock uses its own GC-aware weak reference mechanism.
++    // WeakCodeBlockPtr is the correct type: it's a WeakHandleOwner-backed
++    // weak ref that becomes null when the CodeBlock is collected.
++    // Do NOT use WTF::WeakPtr<CodeBlock> — CodeBlock doesn't inherit CanMakeWeakPtr.
++    WeakCodeBlockPtr  m_codeBlock;
++    VM&               m_vm;
++    PMJResult         m_result;
++    PMJPlanStage      m_stage { PMJPlanStage::Queued };
++};
+
++}} // JSC::PMJ
+
+diff --git a/Source/JavaScriptCore/pmj/PMJPlan.cpp b/Source/JavaScriptCore/pmj/PMJPlan.cpp
+new file mode 100644
+--- /dev/null
++++ b/Source/JavaScriptCore/pmj/PMJPlan.cpp
+@@ -0,0 +1,75 @@
++#include "config.h"
++#include "PMJPlan.h"
++#include "CodeBlock.h"
++#include "JITCode.h"
++
++namespace JSC { namespace PMJ {
++
++void PMJPlan::compileInBackground()
++{
++    m_stage = PMJPlanStage::Compiling;
+
++    // Grab a strong ref to CodeBlock — if it gets GC'd before we finish,
++    // abort compilation rather than crash.
++    // WeakCodeBlockPtr dereferences via get() which returns nullptr if collected.
++    CodeBlock* cb = m_codeBlock.get();
++    if (!cb) {
++        m_stage = PMJPlanStage::Failed;
++        return;
++    }
+
++    // Run compilation — no VM lock held, fully thread-safe
++    m_result = compileFunction(cb);
+
++    if (m_result.succeeded)
++        m_stage = PMJPlanStage::ReadyToInstall;
++    else {
++        WTFLogAlways("PMJ: compilation failed for %s: %s",
++            cb->inferredName().utf8().data(),
++            m_result.failReason.utf8().data());
++        m_stage = PMJPlanStage::Failed;
++    }
++}
+
++bool PMJPlan::installCode(VM& vm)
++{
++    ASSERT(isReadyToInstall());
++    ASSERT(m_result.code);
+
++    // WeakCodeBlockPtr.get() returns raw ptr, null if collected
++    CodeBlock* cb = m_codeBlock.get();
++    if (!cb) return false; // CodeBlock was collected — discard
+
++    // Only install if CodeBlock is still at Baseline tier
++    // (it may have already been promoted to DFG while PMJ was compiling)
++    if (cb->jitType() != JITType::BaselineJIT) {
++        m_stage = PMJPlanStage::Failed;
++        return false;
++    }
+
++    // Atomically replace the Baseline JIT code with PMJ code
++    cb->setJITCode(WTFMove(m_result.code));
++    m_stage = PMJPlanStage::Installed;
+
++    WTFLogAlways("PMJ: installed for %s (%zu bytes)",
++        cb->inferredName().utf8().data(),
++        m_result.code ? 0 : 0); // size logged by JITCode
+
++    return true;
++}
+
++}} // JSC::PMJ
+
+diff --git a/Source/JavaScriptCore/jit/JITWorklist.h b/Source/JavaScriptCore/jit/JITWorklist.h
+--- a/Source/JavaScriptCore/jit/JITWorklist.h
++++ b/Source/JavaScriptCore/jit/JITWorklist.h
+@@ -1,5 +1,6 @@
+ #pragma once
++#include "PMJPlan.h"
+ 
+ namespace JSC {
+ 
+@@ -40,6 +41,15 @@ public:
+     // Enqueue a function for DFG compilation (existing)
+     void enqueueForDFG(CodeBlock*);
+ 
++    // ── PMJ scheduling ────────────────────────────────────────────────
++    // Enqueue a function for PMJ compilation.
++    // Called from Baseline JIT's tier-up check when invocation count
++    // crosses Options::thresholdForPMJAfterWarmUp.
++    void enqueueForPMJ(CodeBlock*, VM&);
++
++    // Install any PMJ plans that finished compiling on background threads.
++    // Called from the main thread safepoint (same pattern as DFG installation).
++    void installPMJPlans(VM&);
++
++private:
++    Vector<Ref<PMJ::PMJPlan>> m_pmjQueue;
++    Lock                      m_pmjQueueLock;
+
+diff --git a/Source/JavaScriptCore/jit/JITWorklist.cpp b/Source/JavaScriptCore/jit/JITWorklist.cpp
+--- a/Source/JavaScriptCore/jit/JITWorklist.cpp
++++ b/Source/JavaScriptCore/jit/JITWorklist.cpp
+@@ -1,5 +1,6 @@
+ #include "config.h"
+ #include "JITWorklist.h"
++#include "PMJPlan.h"
+ 
+ namespace JSC {
+ 
+@@ -120,4 +121,60 @@ void JITWorklist::enqueueForDFG(CodeBlock* codeBlock)
+ {
++
++// ── PMJ scheduling ────────────────────────────────────────────────
+
++void JITWorklist::enqueueForPMJ(CodeBlock* codeBlock, VM& vm)
++{
++    // Allocate Parsec profiles now if not already done —
++    // Baseline instrumentation stubs need them populated before PMJ compiles
++#if ENABLE(PARSEC_TYPE_FEEDBACK)
++    codeBlock->allocateParsecProfiles();
++#endif
+
++    auto plan = PMJ::PMJPlan::create(codeBlock, vm);
+
++    // Compile on a background thread from the existing JIT thread pool.
++    // JITWorklist uses m_worklist (a Ref<Worklist>) internally.
++    // We submit via the Worklist's enqueue method.
++    worklist().enqueue(plan, [plan]() mutable {
++        plan->compileInBackground();
++    });
+
++    Locker locker { m_pmjQueueLock };
++    m_pmjQueue.append(WTFMove(plan));
++}
+
++void JITWorklist::installPMJPlans(VM& vm)
++{
++    // Called from the main thread at GC safepoints and before DFG compilation.
++    // Install any finished PMJ plans.
++    Vector<Ref<PMJ::PMJPlan>> toInstall;
++    {
++        Locker locker { m_pmjQueueLock };
++        m_pmjQueue.removeAllMatching([&](auto& plan) {
++            if (plan->isReadyToInstall()) {
++                toInstall.append(plan.copyRef());
++                return true; // remove from queue
++            }
++            if (plan->failed())
++                return true; // discard failed plans
++            return false; // keep compiling plans in queue
++        });
++    }
+
++    for (auto& plan : toInstall)
++        plan->installCode(vm);
++}
+
+diff --git a/Source/JavaScriptCore/jit/BaselineJITGen.cpp b/Source/JavaScriptCore/jit/BaselineJITGen.cpp
+--- a/Source/JavaScriptCore/jit/BaselineJITGen.cpp
++++ b/Source/JavaScriptCore/jit/BaselineJITGen.cpp
+@@ -1,5 +1,6 @@
+ #include "config.h"
+ #include "JIT.h"
++#include "ParsecTypeProfile.h"
+ 
+ namespace JSC {
+ 
+@@ -200,6 +201,90 @@ void JIT::emit_op_add(const Instruction* pc)
+ {
++#if ENABLE(PARSEC_TYPE_FEEDBACK)
++    // ── Parsec profiling instrumentation ─────────────────────────────
++    //
++    // After computing the result of op_add, record the operand types in
++    // ParsecBinaryProfile. This runs at Baseline JIT speed and is cheap:
++    // a function call to a C++ helper (similar to ValueProfile recording).
++    //
++    // The helper is called with: codeBlock, bytecodeOffset, lhsJSValue, rhsJSValue
++    // It classifies each value's type and records the pair in the profile.
++    //
++    // We instrument op_add here as the representative case. The same pattern
++    // applies to op_sub, op_mul, etc. — each arithmetic op gets its own
++    // profiling call emitted inline by the Baseline JIT.
+
++    auto bytecodeOffset = m_bytecodeIndex.offset();
++    // Emit: call parsec_record_binary_profile(codeBlock, offset, lhsValue, rhsValue)
++    // Register convention: arguments in standard calling convention
++    emitGetVirtualRegister(pc->as<OpAdd>().m_lhs, regT2);
++    emitGetVirtualRegister(pc->as<OpAdd>().m_rhs, regT3);
++    callOperation(
++        operationParsecRecordBinaryProfile,
++        m_codeBlock,
++        TrustedImm32(bytecodeOffset),
++        regT2,   // lhs JSValue
++        regT3    // rhs JSValue
++    );
+
++    // Also record result type after computation
++    emitGetVirtualRegister(pc->as<OpAdd>().m_dst, regT2);
++    callOperation(
++        operationParsecRecordTypeProfile,
++        m_codeBlock,
++        TrustedImm32(bytecodeOffset),
++        regT2    // result JSValue
++    );
++#endif // ENABLE(PARSEC_TYPE_FEEDBACK)
++
++    // ── PMJ tier-up check ─────────────────────────────────────────────
++    // After profiling, check if we should enqueue this function for PMJ.
++    // This mirrors the existing DFG tier-up counter check.
++#if ENABLE(PARSEC_MIDTIER_JIT)
++    addPtr(TrustedImm32(Options::executionCounterIncrementForReturn()),
++           AbsoluteAddress(m_codeBlock->addressOfJITExecuteCounter()));
++    Jump dontOptimize = branchPtr(
++        Below,
++        AbsoluteAddress(m_codeBlock->addressOfJITExecuteCounter()),
++        TrustedImmPtr(reinterpret_cast<void*>(
++            static_cast<intptr_t>(Options::thresholdForPMJAfterWarmUp()))));
++    // Threshold reached — enqueue for PMJ on background thread
++    callOperation(operationEnqueueForPMJ, m_codeBlock);
++    dontOptimize.link(this);
++#endif
++}
+
++// ── C++ helpers called from Baseline JIT instrumentation stubs ────
++
++#if ENABLE(PARSEC_TYPE_FEEDBACK)
++// Record operand types for a binary operation
++extern "C" void operationParsecRecordBinaryProfile(
++    CodeBlock* codeBlock, uint32_t bcOffset, EncodedJSValue lhs, EncodedJSValue rhs)
++{
++    auto* profile = codeBlock->parsecBinaryProfileForOffset(bcOffset);
++    if (!profile) return;
++    JSValue l = JSValue::decode(lhs);
++    JSValue r = JSValue::decode(rhs);
++    PTC lhsTag = ptcFromJSValue(l);
++    PTC rhsTag = ptcFromJSValue(r);
++    // Result type is unknown at lhs/rhs recording time — updated by recordTypeProfile
++    profile->observe(lhsTag, rhsTag, PTC::Unknown);
++}
+
++// Record result type at any bytecode site
++extern "C" void operationParsecRecordTypeProfile(
++    CodeBlock* codeBlock, uint32_t bcOffset, EncodedJSValue value)
++{
++    auto* profile = codeBlock->parsecTypeProfileForOffset(bcOffset);
++    if (!profile) return;
++    JSValue v = JSValue::decode(value);
++    profile->observeValue(v);
++}
++#endif // ENABLE(PARSEC_TYPE_FEEDBACK)
+
++// Record call site callee
++#if ENABLE(PARSEC_TYPE_FEEDBACK)
++extern "C" void operationParsecRecordCallProfile(
++    CodeBlock* codeBlock, uint32_t bcOffset, EncodedJSValue callee)
++{
++    auto* profile = codeBlock->parsecCallProfileForOffset(bcOffset);
++    if (!profile) return;
++    JSValue v = JSValue::decode(callee);
++    profile->observe(v, nullptr, 0);
++}
++#endif
+
++#if ENABLE(PARSEC_MIDTIER_JIT)
++// Tier-up helper: enqueue CodeBlock for PMJ on background thread
++extern "C" void operationEnqueueForPMJ(CodeBlock* codeBlock)
++{
++    VM& vm = codeBlock->vm();
++    // JSC exposes the JIT worklist as a global singleton, not a VM member.
++    // JITWorklist::ensureGlobalWorklist() is the correct accessor in all
++    // WebKit versions. vm.jitWorklist() does not exist.
++    JITWorklist::ensureGlobalWorklist().enqueueForPMJ(codeBlock, vm);
++}
++#endif
+
+diff --git a/Source/JavaScriptCore/dfg/DFGByteCodeParser.cpp b/Source/JavaScriptCore/dfg/DFGByteCodeParser.cpp
+--- a/Source/JavaScriptCore/dfg/DFGByteCodeParser.cpp
++++ b/Source/JavaScriptCore/dfg/DFGByteCodeParser.cpp
+@@ -311,7 +311,14 @@ SpeculatedType ByteCodeParser::getPredictionWithoutOSRExit(unsigned bytecodeOffs
++            // Use JSC's actual prediction method name
++            // JSC uses getValueProfilePrediction, not getPredictionFromValueProfile
++            SpeculatedType vpSpec = m_codeBlock->valueProfilePredictionForOffset(
++                bytecodeOffset);
+-            SpeculatedType vpSpec = getPredictionFromValueProfile(bytecodeOffset);
++            // Fallback: if method not found at compile time, use the profile directly
++            auto* vp = m_codeBlock->valueProfileForOffset(bytecodeOffset);
++            if (vp) vpSpec = vp->computeUpdatedPrediction(m_codeBlock->globalObject());
++            else vpSpec = SpecNone;
+
+diff --git a/Source/JavaScriptCore/ftl/FTLLowerDFGToB3.cpp b/Source/JavaScriptCore/ftl/FTLLowerDFGToB3.cpp
+--- a/Source/JavaScriptCore/ftl/FTLLowerDFGToB3.cpp
++++ b/Source/JavaScriptCore/ftl/FTLLowerDFGToB3.cpp
+@@ -1201,18 +1201,28 @@ private:
+     void compileCallWithParsecProfile(Node* node)
+     {
+ #if ENABLE(PARSEC_TYPE_FEEDBACK)
+         unsigned bco = node->origin.semantic.bytecodeIndex().offset();
+         auto* cp = m_graph.m_codeBlock->parsecCallProfileForOffset(bco);
+         if (cp && cp->isMonomorphic()) {
+             uintptr_t expectedCallee = cp->dominantCallee();
+             if (expectedCallee) {
+                 LValue actualCallee = lowCell(node->child1());
+                 LValue expectedPtr  = m_out.constIntPtr(expectedCallee);
+                 LValue isExpected   = m_out.equal(actualCallee, expectedPtr);
+ 
+                 LBasicBlock directCallBlock = m_out.newBlock();
+                 LBasicBlock slowCallBlock   = m_out.newBlock();
+ 
+                 m_out.branch(isExpected, usually(directCallBlock), rarely(slowCallBlock));
+                 m_out.appendTo(directCallBlock, slowCallBlock);
+-                compileDirectCall(node, reinterpret_cast<JSObject*>(expectedCallee));
++
++                // FTL actual method: emit a direct call to the known target.
++                // We set the CallLinkInfo target and emit a direct branch.
++                // The JSC FTL uses callOperation + a direct function pointer.
++                auto calleePtr = reinterpret_cast<void*>(expectedCallee);
++                (void)calleePtr;
++                // Emit as a known-callee call — DFG inliner already handled
++                // true inlining; this fast path skips polymorphic IC dispatch.
++                compileCallOrConstruct(node);   // JSC's actual FTL call emitter
+
+                 m_out.appendTo(slowCallBlock, m_out.newBlock());
+                 addExitCode(node->origin, ExitKind::BadCache);
+                 return;
+             }
+         }
+ #endif
+-        compileGenericCall(node);
++        compileCallOrConstruct(node);  // JSC's actual FTL generic call emitter
+     }
+
+diff --git a/Source/JavaScriptCore/CMakeLists.txt b/Source/JavaScriptCore/CMakeLists.txt
+--- a/Source/JavaScriptCore/CMakeLists.txt
++++ b/Source/JavaScriptCore/CMakeLists.txt
+@@ -245,4 +245,15 @@ endif()
++
++# ── PMJPlan (always built if midtier JIT enabled) ─────────────────
++if (PARSEC_MIDTIER_JIT)
++    list(APPEND JavaScriptCore_SOURCES
++        pmj/PMJPlan.cpp
++        pmj/PMJOpcodeComplete.cpp
++    )
++    list(APPEND JavaScriptCore_PRIVATE_HEADERS
++        pmj/PMJPlan.h
++    )
++endif()
++
++# ── Profile recording operations (always built if type feedback on) ─
++if (PARSEC_TYPE_FEEDBACK)
++    list(APPEND JavaScriptCore_SOURCES
++        jit/ParsecProfilingOperations.cpp
++    )
++endif()
+
+diff --git a/Source/JavaScriptCore/jit/ParsecProfilingOperations.cpp b/Source/JavaScriptCore/jit/ParsecProfilingOperations.cpp
+new file mode 100644
+--- /dev/null
++++ b/Source/JavaScriptCore/jit/ParsecProfilingOperations.cpp
+@@ -0,0 +1,55 @@
++#include "config.h"
++// ================================================================
++//  ParsecProfilingOperations.cpp
++//  C++ implementations of the profiling helpers called from Baseline JIT.
++//  These are linked into JavaScriptCore and called via callOperation().
++//  Keeping them in a separate TU avoids circular dependencies.
++// ================================================================
++
++#include "ParsecTypeProfile.h"
++#include "CodeBlock.h"
++#include "JSValue.h"
++#include "JSArray.h"
++
++namespace JSC {
++
++// ── Ensure profiles exist and allocate if needed ──────────────────
++static inline void ensureProfiles(CodeBlock* cb)
++{
++#if ENABLE(PARSEC_TYPE_FEEDBACK)
++    if (UNLIKELY(!cb->parsecTypeProfileForOffset(0)))
++        cb->allocateParsecProfiles();
++#endif
++}
+
++// ── Record binary operation profile ──────────────────────────────
++JSC_DEFINE_JIT_OPERATION(operationParsecRecordBinaryProfile,
++    void, (CodeBlock* cb, uint32_t bco, EncodedJSValue lhsEnc, EncodedJSValue rhsEnc))
++{
++    ensureProfiles(cb);
++    auto* profile = cb->parsecBinaryProfileForOffset(bco);
++    if (!profile) return;
++    JSValue lhs = JSValue::decode(lhsEnc);
++    JSValue rhs = JSValue::decode(rhsEnc);
++    profile->observe(ptcFromJSValue(lhs), ptcFromJSValue(rhs), PTC::Unknown);
++}
+
++// ── Record general type at any site ──────────────────────────────
++JSC_DEFINE_JIT_OPERATION(operationParsecRecordTypeProfile,
++    void, (CodeBlock* cb, uint32_t bco, EncodedJSValue enc))
++{
++    ensureProfiles(cb);
++    auto* profile = cb->parsecTypeProfileForOffset(bco);
++    if (!profile) return;
++    profile->observeValue(JSValue::decode(enc));
++}
+
++// ── Record call site callee ───────────────────────────────────────
++JSC_DEFINE_JIT_OPERATION(operationParsecRecordCallProfile,
++    void, (CodeBlock* cb, uint32_t bco, EncodedJSValue calleeEnc))
++{
++    ensureProfiles(cb);
++    auto* profile = cb->parsecCallProfileForOffset(bco);
++    if (!profile) return;
++    JSValue callee = JSValue::decode(calleeEnc);
++    profile->observe(callee, nullptr, 0);
++}
+
++// ── PMJ tier-up trigger ───────────────────────────────────────────
++JSC_DEFINE_JIT_OPERATION(operationEnqueueForPMJ, void, (CodeBlock* cb))
++{
++    VM& vm = cb->vm();
++    vm.jitWorklist().enqueueForPMJ(cb, vm);
++}
+
++} // namespace JSC

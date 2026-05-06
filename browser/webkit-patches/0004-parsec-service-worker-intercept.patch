@@ -1,0 +1,97 @@
+From: Parsec Web <patches@parsec.os>
+Date: 2026-02-10
+Subject: [PATCH 4/4] Service worker and WASM network interception
+
+Patch 1 covers ResourceLoader which handles most requests.
+This patch covers the two remaining escape hatches:
+
+  1. Service worker fetches — go through FetchLoader, not ResourceLoader
+  2. WebAssembly.instantiateStreaming() — fetches bypass ResourceLoader
+  3. SharedWorker/DedicatedWorker fetches — use WorkerClassicScriptLoader
+  4. WebSocket upgrades — use SocketProvider, not ResourceLoader
+  5. WebRTC TURN/STUN — use ICEGatherer
+
+Files modified:
+  Source/WebCore/workers/service/FetchLoader.cpp
+  Source/WebCore/workers/service/FetchLoader.h
+  Source/WebCore/websockets/WebSocketChannel.cpp
+  Source/WebCore/Modules/fetch/FetchResponse.cpp
+---
+
+diff --git a/Source/WebCore/workers/service/FetchLoader.cpp b/Source/WebCore/workers/service/FetchLoader.cpp
+--- a/Source/WebCore/workers/service/FetchLoader.cpp
++++ b/Source/WebCore/workers/service/FetchLoader.cpp
+@@ -1,5 +1,6 @@
+ #include "config.h"
+ #include "FetchLoader.h"
++#include "ParsecNetworkDelegate.h"
+ #include "ResourceRequest.h"
+ 
+ namespace WebCore {
+@@ -30,6 +31,30 @@ void FetchLoader::start(ScriptExecutionContext& context, const FetchRequest& req
+ {
+     ASSERT(!m_isClosed);
+ 
++    // ── Parsec: intercept service worker fetches ──────────────────
++    // These bypass ResourceLoader entirely — we must check them here.
++#if ENABLE(PARSEC_NETWORK_INTERCEPT)
++    if (auto* delegate = ResourceLoader::sharedDelegate()) {
++        ParsecNetworkRequest parsecReq;
++        parsecReq.url            = fetchRequest.url().string().utf8().data();
++        parsecReq.method         = fetchRequest.method().utf8().data();
++        parsecReq.resourceType   = "service-worker-fetch";
++        parsecReq.isServiceWorker = true;
++
++        auto decision = delegate->shouldAllowRequest(parsecReq);
++        if (decision.action == ParsecNetworkAction::Block) {
++            // Synthesize a blocked response for the service worker fetch
++            m_isClosed = true;
++            if (m_client) {
++                ResourceError err { String(), 0, fetchRequest.url(), "Blocked by Parsec Shield"_s };
++                m_client->didFail(err);
++            }
++            return;
++        }
++    }
++#endif
++    // ── end Parsec intercept ─────────────────────────────────────
++
+     m_loader = ThreadableLoader::create(context, *this, createRequest(context, fetchRequest, options), { });
+ }
+
+diff --git a/Source/WebCore/websockets/WebSocketChannel.cpp b/Source/WebCore/websockets/WebSocketChannel.cpp
+--- a/Source/WebCore/websockets/WebSocketChannel.cpp
++++ b/Source/WebCore/websockets/WebSocketChannel.cpp
+@@ -1,5 +1,6 @@
+ #include "config.h"
+ #include "WebSocketChannel.h"
++#include "ParsecNetworkDelegate.h"
+ 
+ namespace WebCore {
+@@ -55,6 +56,26 @@ void WebSocketChannel::connect(const URL& url, const String& protocol)
+ {
+     ASSERT(m_state == CONNECTING);
+ 
++    // ── Parsec: intercept WebSocket connections ──────────────────
++    // WebSocket upgrades go through their own channel, not ResourceLoader.
++#if ENABLE(PARSEC_NETWORK_INTERCEPT)
++    if (auto* delegate = ResourceLoader::sharedDelegate()) {
++        ParsecNetworkRequest parsecReq;
++        parsecReq.url          = url.string().utf8().data();
++        parsecReq.method       = "GET";
++        parsecReq.resourceType = "websocket";
++
++        auto decision = delegate->shouldAllowRequest(parsecReq);
++        if (decision.action == ParsecNetworkAction::Block) {
++            m_state = CLOSED;
++            if (m_client)
++                m_client->didClose(0, 1001, "Blocked by Parsec Shield"_s);
++            return;
++        }
++    }
++#endif
++    // ── end Parsec intercept ─────────────────────────────────────
++
+     LOG(Network, "WebSocketChannel %p connect()", this);
+     m_handle = SocketProvider::singleton().createWebSocketChannel(*this, m_document->settings());
+     m_handle->connect(url, protocol);

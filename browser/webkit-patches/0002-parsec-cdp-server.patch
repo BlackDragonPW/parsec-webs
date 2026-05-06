@@ -1,0 +1,430 @@
+From: Parsec Web <patches@parsec.os>
+Date: 2026-02-05
+Subject: [PATCH 2/4] Embed CDP WebSocket server into WebKit inspector
+
+Adds a built-in Chrome DevTools Protocol WebSocket server to WebKit's
+inspector infrastructure. Instead of relying on Safari's proprietary
+remote inspection protocol, this patch exposes the full CDP interface
+on ws://127.0.0.1:PORT so any CDP client (our DevTools panel, VS Code,
+Chrome DevTools, etc.) can connect and get:
+
+  - Network timeline (all requests, timing, headers, bodies)
+  - JavaScript debugger (breakpoints, call stacks, watch expressions)
+  - DOM inspector (live tree, style editor)
+  - Memory profiler (heap snapshots, allocation timeline)
+  - Performance timeline (paint, layout, script events)
+  - Console (log forwarding bidirectional)
+
+Each tab gets its own CDP endpoint:
+  ws://127.0.0.1:9222/devtools/page/{tabId}
+
+Files modified:
+  Source/WebKit/UIProcess/Inspector/ParsecCDPServer.h   (new)
+  Source/WebKit/UIProcess/Inspector/ParsecCDPServer.cpp (new)
+  Source/WebKit/UIProcess/WebPageProxy.h
+  Source/WebKit/UIProcess/WebPageProxy.cpp
+  Source/WebCore/inspector/InspectorController.cpp
+---
+
+diff --git a/Source/WebKit/UIProcess/Inspector/ParsecCDPServer.h b/Source/WebKit/UIProcess/Inspector/ParsecCDPServer.h
+new file mode 100644
+--- /dev/null
++++ b/Source/WebKit/UIProcess/Inspector/ParsecCDPServer.h
+@@ -0,0 +1,120 @@
++#pragma once
++// ================================================================
++//  ParsecCDPServer.h
++//  Parsec Web — Chrome DevTools Protocol WebSocket server
++//
++//  Embeds a lightweight WebSocket server directly into WebKit's
++//  UIProcess. Each WebPageProxy registers with this server when
++//  created; the server routes CDP messages between the inspector
++//  frontend and WebKit's InspectorController.
++//
++//  Wire protocol: Chrome DevTools Protocol (CDP)
++//  https://chromedevtools.github.io/devtools-protocol/
++//
++//  Endpoints:
++//    GET /json                → list of debuggable targets
++//    GET /json/version        → browser version info
++//    WS  /devtools/page/{id}  → full CDP for a tab
++//    WS  /devtools/browser    → browser-level CDP
++// ================================================================
++
++#include <string>
++#include <unordered_map>
++#include <functional>
++#include <memory>
++#include <thread>
++#include <mutex>
++#include <atomic>
++
++namespace WebKit {
++
++class WebPageProxy;
++
++// ── CDP Target descriptor ─────────────────────────────────────────
++struct CDPTarget {
++    std::string id;           // UUID matching tab ID
++    std::string type;         // "page"
++    std::string title;
++    std::string url;
++    std::string webSocketUrl; // ws://127.0.0.1:9222/devtools/page/{id}
++    WebPageProxy* page;       // non-owning
++};
++
++// ── WebSocket client connection ────────────────────────────────────
++struct CDPConnection {
++    int fd;
++    std::string targetId;
++    bool handshakeDone { false };
++    std::string pendingData;
++};
++
++// ── CDP Server ─────────────────────────────────────────────────────
++class ParsecCDPServer {
++public:
++    static ParsecCDPServer& shared();
++
++    // Start listening on the given port (default 9222)
++    void start(uint16_t port = 9222);
++    void stop();
++
++    // Called by WebPageProxy when a tab is created/destroyed
++    void registerPage(const std::string& targetId, WebPageProxy*);
++    void unregisterPage(const std::string& targetId);
++    void updatePageInfo(const std::string& targetId, const std::string& title, const std::string& url);
++
++    // Called by WebKit's inspector when it has a message to send to DevTools
++    void sendToDevTools(const std::string& targetId, const std::string& jsonMessage);
++
++    // Called when a DevTools frontend sends a CDP command
++    // Dispatches to WebKit's InspectorController
++    using CommandHandler = std::function<void(const std::string& targetId, const std::string& jsonMessage)>;
++    void setCommandHandler(CommandHandler handler) { m_commandHandler = std::move(handler); }
++
++    uint16_t port() const { return m_port; }
++    bool isRunning() const { return m_running; }
++
++private:
++    ParsecCDPServer() = default;
++
++    void acceptLoop();
++    void handleClient(int fd);
++    void handleHTTP(int fd, const std::string& request);
++    void handleWebSocket(CDPConnection& conn, const std::vector<uint8_t>& frame);
++    std::string makeWebSocketHandshake(const std::string& key);
++    std::string makeJsonTargetList();
++    std::string makeVersionJson();
++    std::vector<uint8_t> encodeWebSocketFrame(const std::string& data);
++    std::string decodeWebSocketFrame(const std::vector<uint8_t>& data);
++    static std::string base64Encode(const std::vector<uint8_t>& data);
++    static std::string sha1Base64(const std::string& input);
++
++    uint16_t m_port { 9222 };
++    int m_serverFd { -1 };
++    std::atomic<bool> m_running { false };
++    std::thread m_acceptThread;
++    std::mutex m_mutex;
++    std::unordered_map<std::string, CDPTarget> m_targets;
++    std::unordered_map<int, CDPConnection> m_connections;
++    CommandHandler m_commandHandler;
++};
++
++} // namespace WebKit
+
+diff --git a/Source/WebKit/UIProcess/Inspector/ParsecCDPServer.cpp b/Source/WebKit/UIProcess/Inspector/ParsecCDPServer.cpp
+new file mode 100644
+--- /dev/null
++++ b/Source/WebKit/UIProcess/Inspector/ParsecCDPServer.cpp
+@@ -0,0 +1,380 @@
++#include "config.h"
++#include "ParsecCDPServer.h"
++
++#include <sys/socket.h>
++#include <netinet/in.h>
++#include <unistd.h>
++#include <sstream>
++#include <algorithm>
++#include <openssl/sha.h>
++#include <openssl/evp.h>
++
++namespace WebKit {
++
++// ── Singleton ────────────────────────────────────────────────────
++ParsecCDPServer& ParsecCDPServer::shared()
++{
++    static ParsecCDPServer instance;
++    return instance;
++}
++
++// ── Start / Stop ─────────────────────────────────────────────────
++void ParsecCDPServer::start(uint16_t port)
++{
++    m_port = port;
++    m_serverFd = ::socket(AF_INET, SOCK_STREAM, 0);
++    if (m_serverFd < 0) return;
++
++    int opt = 1;
++    setsockopt(m_serverFd, SOL_SOCKET, SO_REUSEADDR, &opt, sizeof(opt));
++
++    sockaddr_in addr {};
++    addr.sin_family      = AF_INET;
++    addr.sin_addr.s_addr = htonl(INADDR_LOOPBACK); // 127.0.0.1 only — not exposed to network
++    addr.sin_port        = htons(port);
++
++    if (::bind(m_serverFd, (sockaddr*)&addr, sizeof(addr)) < 0) { ::close(m_serverFd); return; }
++    if (::listen(m_serverFd, 16) < 0) { ::close(m_serverFd); return; }
++
++    m_running = true;
++    m_acceptThread = std::thread([this] { acceptLoop(); });
++    m_acceptThread.detach();
++}
++
++void ParsecCDPServer::stop()
++{
++    m_running = false;
++    if (m_serverFd >= 0) { ::close(m_serverFd); m_serverFd = -1; }
++}
++
++// ── Target management ────────────────────────────────────────────
++void ParsecCDPServer::registerPage(const std::string& targetId, WebPageProxy* page)
++{
++    std::lock_guard lock(m_mutex);
++    CDPTarget t;
++    t.id         = targetId;
++    t.type       = "page";
++    t.title      = "New Tab";
++    t.url        = "about:blank";
++    t.webSocketUrl = "ws://127.0.0.1:" + std::to_string(m_port) + "/devtools/page/" + targetId;
++    t.page       = page;
++    m_targets[targetId] = std::move(t);
++}
++
++void ParsecCDPServer::unregisterPage(const std::string& targetId)
++{
++    std::lock_guard lock(m_mutex);
++    m_targets.erase(targetId);
++    // Close any connected DevTools clients for this target
++    for (auto it = m_connections.begin(); it != m_connections.end(); ) {
++        if (it->second.targetId == targetId) {
++            ::close(it->first);
++            it = m_connections.erase(it);
++        } else ++it;
++    }
++}
++
++void ParsecCDPServer::updatePageInfo(const std::string& targetId, const std::string& title, const std::string& url)
++{
++    std::lock_guard lock(m_mutex);
++    if (auto it = m_targets.find(targetId); it != m_targets.end()) {
++        it->second.title = title;
++        it->second.url   = url;
++    }
++}
++
++// ── Forward CDP message to connected DevTools frontend ────────────
++void ParsecCDPServer::sendToDevTools(const std::string& targetId, const std::string& json)
++{
++    std::lock_guard lock(m_mutex);
++    for (auto& [fd, conn] : m_connections) {
++        if (conn.targetId == targetId && conn.handshakeDone) {
++            auto frame = encodeWebSocketFrame(json);
++            ::write(fd, frame.data(), frame.size());
++        }
++    }
++}
++
++// ── Accept loop ───────────────────────────────────────────────────
++void ParsecCDPServer::acceptLoop()
++{
++    while (m_running) {
++        sockaddr_in clientAddr {};
++        socklen_t addrLen = sizeof(clientAddr);
++        int clientFd = ::accept(m_serverFd, (sockaddr*)&clientAddr, &addrLen);
++        if (clientFd < 0) { if (m_running) continue; break; }
++        // Handle each client in its own detached thread
++        std::thread([this, clientFd] { handleClient(clientFd); }).detach();
++    }
++}
++
++// ── Client handler ────────────────────────────────────────────────
++void ParsecCDPServer::handleClient(int fd)
++{
++    char buf[4096] {};
++    ssize_t n = ::recv(fd, buf, sizeof(buf)-1, 0);
++    if (n <= 0) { ::close(fd); return; }
++
++    std::string req(buf, n);
++
++    if (req.find("Upgrade: websocket") != std::string::npos) {
++        // WebSocket upgrade — determine target from URL
++        std::string targetId;
++        auto wsPos = req.find("GET /devtools/page/");
++        if (wsPos != std::string::npos) {
++            auto start = wsPos + 19; // len("GET /devtools/page/")
++            auto end   = req.find(" HTTP", start);
++            if (end != std::string::npos)
++                targetId = req.substr(start, end - start);
++        }
++
++        // Extract Sec-WebSocket-Key
++        auto keyPos = req.find("Sec-WebSocket-Key: ");
++        if (keyPos == std::string::npos) { ::close(fd); return; }
++        auto keyStart = keyPos + 19;
++        auto keyEnd   = req.find("\r\n", keyStart);
++        auto key      = req.substr(keyStart, keyEnd - keyStart);
++
++        auto handshakeResp = makeWebSocketHandshake(key);
++        ::write(fd, handshakeResp.c_str(), handshakeResp.size());
++
++        CDPConnection conn;
++        conn.fd            = fd;
++        conn.targetId      = targetId;
++        conn.handshakeDone = true;
++        {
++            std::lock_guard lock(m_mutex);
++            m_connections[fd] = conn;
++        }
++
++        // WebSocket read loop
++        while (m_running) {
++            std::vector<uint8_t> frame(65536);
++            n = ::recv(fd, frame.data(), frame.size(), 0);
++            if (n <= 0) break;
++            frame.resize(n);
++            auto msg = decodeWebSocketFrame(frame);
++            if (!msg.empty() && m_commandHandler)
++                m_commandHandler(targetId, msg);
++        }
++        std::lock_guard lock(m_mutex);
++        m_connections.erase(fd);
++    } else {
++        // HTTP request for /json etc
++        handleHTTP(fd, req);
++    }
++    ::close(fd);
++}
++
++// ── HTTP handler ──────────────────────────────────────────────────
++void ParsecCDPServer::handleHTTP(int fd, const std::string& req)
++{
++    std::string body;
++    if (req.find("GET /json/version") != std::string::npos)
++        body = makeVersionJson();
++    else if (req.find("GET /json") != std::string::npos || req.find("GET /json/list") != std::string::npos)
++        body = makeJsonTargetList();
++    else
++        body = "Not found";
++
++    std::string resp =
++        "HTTP/1.1 200 OK\r\n"
++        "Content-Type: application/json; charset=UTF-8\r\n"
++        "Content-Length: " + std::to_string(body.size()) + "\r\n"
++        "Access-Control-Allow-Origin: *\r\n"
++        "\r\n" + body;
++    ::write(fd, resp.c_str(), resp.size());
++}
++
++std::string ParsecCDPServer::makeJsonTargetList()
++{
++    std::lock_guard lock(m_mutex);
++    std::ostringstream os;
++    os << "[";
++    bool first = true;
++    for (auto& [id, t] : m_targets) {
++        if (!first) os << ",";
++        os << R"({"id":")" << t.id << R"(","type":")" << t.type
++           << R"(","title":")" << t.title << R"(","url":")" << t.url
++           << R"(","webSocketDebuggerUrl":")" << t.webSocketUrl << R"("})";
++        first = false;
++    }
++    os << "]";
++    return os.str();
++}
++
++std::string ParsecCDPServer::makeVersionJson()
++{
++    return R"({
++  "Browser": "Parsec Web/1.3 (WebKit)",
++  "Protocol-Version": "1.3",
++  "User-Agent": "Mozilla/5.0 (compatible; ParsecWeb/1.3) WebKit",
++  "V8-Version": "JSC",
++  "WebKit-Version": "620+",
++  "webSocketDebuggerUrl": "ws://127.0.0.1:)" + std::to_string(m_port) + R"(/devtools/browser"
+})";
++}
++
++// ── WebSocket framing ────────────────────────────────────────────
++std::string ParsecCDPServer::makeWebSocketHandshake(const std::string& key)
++{
++    auto accept = sha1Base64(key + "258EAFA5-E914-47DA-95CA-C5AB0DC85B11");
++    return "HTTP/1.1 101 Switching Protocols\r\n"
++           "Upgrade: websocket\r\n"
++           "Connection: Upgrade\r\n"
++           "Sec-WebSocket-Accept: " + accept + "\r\n\r\n";
++}
++
++std::vector<uint8_t> ParsecCDPServer::encodeWebSocketFrame(const std::string& data)
++{
++    std::vector<uint8_t> frame;
++    frame.push_back(0x81); // FIN + text opcode
++    size_t len = data.size();
++    if (len < 126) {
++        frame.push_back((uint8_t)len);
++    } else if (len < 65536) {
++        frame.push_back(126);
++        frame.push_back((len >> 8) & 0xFF);
++        frame.push_back(len & 0xFF);
++    } else {
++        frame.push_back(127);
++        for (int i = 7; i >= 0; --i) frame.push_back((len >> (i*8)) & 0xFF);
++    }
++    frame.insert(frame.end(), data.begin(), data.end());
++    return frame;
++}
++
++std::string ParsecCDPServer::decodeWebSocketFrame(const std::vector<uint8_t>& data)
++{
++    if (data.size() < 2) return {};
++    bool masked  = (data[1] & 0x80) != 0;
++    size_t len   = data[1] & 0x7F;
++    size_t offset = 2;
++    if (len == 126) { if (data.size() < 4) return {}; len = (data[2]<<8)|data[3]; offset = 4; }
++    else if (len == 127) { if (data.size() < 10) return {}; len = 0; for (int i=0;i<8;i++) len=(len<<8)|data[2+i]; offset=10; }
++    if (masked) {
++        if (data.size() < offset+4) return {};
++        uint8_t mask[4] = {data[offset],data[offset+1],data[offset+2],data[offset+3]};
++        offset += 4;
++        std::string result(len, 0);
++        for (size_t i=0; i<len && offset+i<data.size(); ++i) result[i] = data[offset+i] ^ mask[i%4];
++        return result;
++    }
++    if (data.size() < offset+len) return {};
++    return std::string(data.begin()+offset, data.begin()+offset+len);
++}
++
++std::string ParsecCDPServer::sha1Base64(const std::string& input)
++{
++    unsigned char hash[SHA_DIGEST_LENGTH];
++    SHA1((unsigned char*)input.c_str(), input.size(), hash);
++    return base64Encode(std::vector<uint8_t>(hash, hash+SHA_DIGEST_LENGTH));
++}
++
++std::string ParsecCDPServer::base64Encode(const std::vector<uint8_t>& data)
++{
++    static const char* chars = "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/";
++    std::string result;
++    size_t i = 0;
++    while (i + 2 < data.size()) {
++        uint32_t v = (data[i]<<16)|(data[i+1]<<8)|data[i+2];
++        result += chars[(v>>18)&63]; result += chars[(v>>12)&63];
++        result += chars[(v>>6)&63];  result += chars[v&63];
++        i += 3;
++    }
++    if (i + 1 == data.size()) { uint32_t v=data[i]<<16; result+=chars[(v>>18)&63]; result+=chars[(v>>12)&63]; result+="=="; }
++    else if (i + 2 == data.size()) { uint32_t v=(data[i]<<16)|(data[i+1]<<8); result+=chars[(v>>18)&63]; result+=chars[(v>>12)&63]; result+=chars[(v>>6)&63]; result+="="; }
++    return result;
++}
++
++} // namespace WebKit

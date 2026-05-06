@@ -1,0 +1,32 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <!-- ── Brand ──────────────────────────────────────────────────────── -->
+    <color name="accent">#6200EE</color>
+    <color name="accent_dark">#3700B3</color>
+    <color name="accent_light">#BB86FC</color>
+
+    <!-- ── Surface / Background (dark theme default) ──────────────────── -->
+    <color name="background">#121212</color>
+    <color name="surface">#1E1E1E</color>
+    <color name="surface_variant">#2C2C2C</color>
+    <color name="toolbar_bg">#1A1A1A</color>
+
+    <!-- ── Text ───────────────────────────────────────────────────────── -->
+    <color name="text_primary">#FFFFFFFF</color>
+    <color name="text_secondary">#B3FFFFFF</color>
+    <color name="text_hint">#66FFFFFF</color>
+    <color name="text_on_accent">#FFFFFFFF</color>
+
+    <!-- ── Icons ──────────────────────────────────────────────────────── -->
+    <color name="icon_tint">#CCFFFFFF</color>
+    <color name="icon_disabled">#55FFFFFF</color>
+
+    <!-- ── Status / Error ─────────────────────────────────────────────── -->
+    <color name="secure_green">#4CAF50</color>
+    <color name="insecure_red">#F44336</color>
+    <color name="warning_amber">#FF9800</color>
+
+    <!-- ── URL bar ────────────────────────────────────────────────────── -->
+    <color name="url_bar_bg">#2C2C2C</color>
+    <color name="url_bar_focused">#3C3C3C</color>
+</resources>
