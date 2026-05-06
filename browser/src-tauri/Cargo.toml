@@ -17,7 +17,7 @@ tao = { version = "0.26", features = ["rwh_06"] }
 # The full production Neutron pipeline: SceneBuffer chrome layer +
 # GlyphFrame tab viewport layer, both composited via wgpu.
 parsec-gpu-renderer = { path = "../gpu-renderer" }
-wgpu-text           = "0.9"
+wgpu_text           = "0.9"
 
 # ── macOS: Direct Metal path ─────────────────────────────────────
 # Bypasses wgpu for Safari-parity rendering performance.
