@@ -12,7 +12,7 @@ use tokio::runtime::Runtime;
 use tracing::warn;
 
 use crate::{BrowserState, TabState, DownloadItem};
-use crate::blocker;
+use crate::{blocker, profile, sync};
 use crate::extension_store::ExtensionAPICall;
 
 // ── IPC command enum ──────────────────────────────────────────────────────────

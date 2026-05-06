@@ -269,7 +269,7 @@ pub extern "system" fn Java_os_parsec_browser_ParsecCore_ipc<'local>(
 /// Returns a JSON array of events. Kotlin calls this on a 16ms timer.
 #[no_mangle]
 pub extern "system" fn Java_os_parsec_browser_ParsecCore_pollEvents<'local>(
-    mut env: JNIEnv<'local>,
+    env: JNIEnv<'local>,
     _class: JClass<'local>,
 ) -> jstring {
     // Drain extension runtime events (notifications, alarms, badges) into main queue.
@@ -568,7 +568,7 @@ pub extern "system" fn Java_os_parsec_browser_ParsecCore_ghostGetUserAgent<'loca
 /// Get Ghost Mode status as JSON.
 #[no_mangle]
 pub extern "system" fn Java_os_parsec_browser_ParsecCore_ghostGetStatus<'local>(
-    mut env: JNIEnv<'local>,
+    env: JNIEnv<'local>,
     _class: JClass<'local>,
 ) -> jstring {
     let config  = rt().block_on(state().phantom.get_config());

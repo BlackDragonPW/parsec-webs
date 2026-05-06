@@ -211,7 +211,7 @@ pub fn init(native_window: *mut std::ffi::c_void, width: u32, height: u32) -> Re
 
 fn build_pipelines(
     device: &wgpu::Device,
-    queue:  &wgpu::Queue,
+    _queue: &wgpu::Queue,
     format: wgpu::TextureFormat,
     width:  u32,
     height: u32,
