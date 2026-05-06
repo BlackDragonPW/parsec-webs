@@ -63,8 +63,9 @@ jobs:
         with:
           workspaces: "src-rust -> target"
 
-      # ── Cargo linker config ──────────────────────────────────────────────────
-      # Tell Cargo which linkers to use for Android cross-compilation.
+      # ── Cargo linker + CC config ─────────────────────────────────────────────
+      # Sets both the Cargo linker (used by rustc) and CC/AR env vars (used by
+      # ring's cc-rs build script, which searches independently of the linker).
       - name: Configure Cargo for Android cross-compilation
         run: |
           mkdir -p ~/.cargo
@@ -78,6 +79,16 @@ jobs:
           linker = "$NDK_TOOLCHAIN/x86_64-linux-android26-clang"
           ar     = "$NDK_TOOLCHAIN/llvm-ar"
           EOF
+
+          # Export CC/AR so ring/cc-rs can find the compiler without PATH search
+          echo "CC_aarch64_linux_android=$NDK_TOOLCHAIN/aarch64-linux-android26-clang" >> $GITHUB_ENV
+          echo "CXX_aarch64_linux_android=$NDK_TOOLCHAIN/aarch64-linux-android26-clang++" >> $GITHUB_ENV
+          echo "AR_aarch64_linux_android=$NDK_TOOLCHAIN/llvm-ar" >> $GITHUB_ENV
+          echo "CC_x86_64_linux_android=$NDK_TOOLCHAIN/x86_64-linux-android26-clang" >> $GITHUB_ENV
+          echo "CXX_x86_64_linux_android=$NDK_TOOLCHAIN/x86_64-linux-android26-clang++" >> $GITHUB_ENV
+          echo "AR_x86_64_linux_android=$NDK_TOOLCHAIN/llvm-ar" >> $GITHUB_ENV
+          # Also add toolchain to PATH as a fallback
+          echo "$NDK_TOOLCHAIN" >> $GITHUB_PATH
 
       # ── Rust check ──────────────────────────────────────────────────────────
       - name: cargo check (aarch64-linux-android)
