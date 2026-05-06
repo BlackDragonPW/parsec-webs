@@ -11,16 +11,16 @@ description = "GPU-accelerated text renderer for Parsec IDE editor canvas (wgpu)
 # wgpu: cross-platform GPU (Metal/Vulkan/DX12/WebGPU)
 wgpu          = { version = "0.19", features = ["wgsl"] }
 
-# wgpu-text: glyph atlas + text batching on top of wgpu
+# wgpu_text: glyph atlas + text batching on top of wgpu
 # Same glyph-brush pipeline Zed uses, but via wgpu not Metal directly.
-wgpu-text     = "0.9"
+wgpu_text     = "0.9"
 
 # raw-window-handle: lets us accept the Tauri HWND/NSView/XID without
 # depending on Tauri itself — keeps this crate portable and testable.
 raw-window-handle = "0.6"
 
 # Font loading
-ab_glyph      = "0.2"          # TTF/OTF rasteriser (used by wgpu-text)
+ab_glyph      = "0.2"          # TTF/OTF rasteriser (used by wgpu_text)
 
 # Sync primitives
 parking_lot   = "0.12"

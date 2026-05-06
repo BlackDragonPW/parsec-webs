@@ -9,7 +9,7 @@
 //   zero Canvas2D, zero CPU rasterisation. Driven by neutron_bridge.rs.
 //
 //   Layer 2 — Tab Viewport (GlyphFrame pipeline)
-//   DevTools panel text rendered via parsec-gpu-renderer's wgpu-text pipeline
+//   DevTools panel text rendered via parsec-gpu-renderer's wgpu_text pipeline
 //   for high-fidelity subpixel syntax highlighting. Falls back to DOM if GPU init fails.
 //
 //   Layer 3 — Tab Surface Compositor

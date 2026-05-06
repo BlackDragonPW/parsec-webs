@@ -481,7 +481,7 @@ fn unpack_rgba(packed: u32) -> wgpu::Color {
     wgpu::Color { r, g, b, a }
 }
 
-/// Build a wgpu-text `OwnedSection` from a `GlyphLine`.
+/// Build a wgpu_text `OwnedSection` from a `GlyphLine`.
 fn build_section(line: &GlyphLine, frame: &GlyphFrame) -> OwnedSection {
     let texts: Vec<OwnedText> = line
         .spans
