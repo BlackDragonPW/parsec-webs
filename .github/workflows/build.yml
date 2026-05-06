@@ -32,23 +32,10 @@ jobs:
           cache: gradle
 
       # ── Gradle wrapper jar bootstrap ─────────────────────────────────────────
-      # The binary gradle-wrapper.jar cannot be stored as a text file.
-      # This step downloads the official jar and verifies its SHA-256 checksum.
+      # gradle-wrapper.jar is not stored in git; let Gradle download it itself.
       - name: Bootstrap gradle-wrapper.jar
-        run: |
-          WRAPPER_JAR="android/gradle/wrapper/gradle-wrapper.jar"
-          EXPECTED_SHA="4edeb139d6cfa4c0467bab5ae11df1d492e1babf1dfd7ef846511242d8fbd122"
-          curl -sL \
-            "https://services.gradle.org/distributions/gradle-8.6-wrapper.jar" \
-            -o "$WRAPPER_JAR"
-          ACTUAL_SHA=$(sha256sum "$WRAPPER_JAR" | cut -d' ' -f1)
-          if [ "$ACTUAL_SHA" != "$EXPECTED_SHA" ]; then
-            echo "ERROR: gradle-wrapper.jar checksum mismatch!"
-            echo "  expected: $EXPECTED_SHA"
-            echo "  actual:   $ACTUAL_SHA"
-            exit 1
-          fi
-          echo "gradle-wrapper.jar verified OK"
+        working-directory: android
+        run: gradle wrapper --gradle-version 8.6
 
       # ── Android SDK / NDK ────────────────────────────────────────────────────
       - name: Set up Android SDK
