@@ -62,7 +62,8 @@ cargo {
     libname       = "parsec_core"
     targets       = listOf("arm64", "x86_64")
     prebuiltToolchains = true
-    profile       = "release"
+    // Allow CI to override profile with -Pcargo.profile=debug for faster builds
+    profile       = (project.findProperty("cargo.profile") as? String) ?: "release"
 }
 
 dependencies {
