@@ -10,7 +10,7 @@ on:
 env:
   CARGO_TERM_COLOR: always
   ANDROID_NDK_VERSION: "26.3.11579264"
-  RUST_VERSION: "1.85.0"
+  RUST_VERSION: "1.86.0"
 
 jobs:
   build:
@@ -55,7 +55,7 @@ jobs:
       - name: Install Rust
         uses: dtolnay/rust-toolchain@stable
         with:
-          toolchain: ${{ env.RUST_VERSION }}
+          toolchain: stable
           targets: aarch64-linux-android,x86_64-linux-android
 
       - name: Cache Rust dependencies
