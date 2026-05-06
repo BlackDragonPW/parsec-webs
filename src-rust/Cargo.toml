@@ -13,7 +13,9 @@ crate-type = ["cdylib"]
 # ── JNI bridge ────────────────────────────────────────────────────────────────
 # "invocation" feature only needed when Rust starts the JVM (not our case),
 # but harmless; keep it so it matches the existing JNIEnv usage.
-jni = { version = "0.21", features = ["invocation"] }
+# "invocation" feature links libjvm (starts a JVM from Rust) — not available on
+# Android where the JVM is already running and calls us. Use plain jni.
+jni = "0.21"
 
 # ── Async runtime ─────────────────────────────────────────────────────────────
 tokio = { version = "1", features = [
@@ -75,7 +77,8 @@ ttf-parser = "0.21"
 
 # ── Extension store ───────────────────────────────────────────────────────────
 # zip 0.6 is the last version with the simple deflate/stored API used in extension_store.rs.
-zip = { version = "0.6", default-features = false, features = ["deflate", "stored"] }
+# "stored" is not a feature — uncompressed (stored) entries are always available.
+zip = { version = "0.6", default-features = false, features = ["deflate"] }
 
 # ── Serialisation ─────────────────────────────────────────────────────────────
 serde      = { version = "1", features = ["derive"] }
@@ -100,14 +103,4 @@ tracing-android    = "0.2"
 # ── Profile (local file I/O) ──────────────────────────────────────────────────
 # No extra crates needed — profile.rs uses std::fs + serde_json.
 
-[profile.release]
-opt-level     = "z"   # minimise binary size (most important for mobile)
-lto           = true
-codegen-units = 1
-panic         = "abort"
-strip         = true
-debug         = false
-
-[profile.dev]
-opt-level = 1
-panic     = "unwind"
+# Profiles must be declared in the workspace root Cargo.toml — see /Cargo.toml.

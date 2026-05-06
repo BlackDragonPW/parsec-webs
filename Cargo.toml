@@ -4,3 +4,17 @@ members = [
     "gpu-renderer",
 ]
 resolver = "2"
+
+# ── Release profile (Android APK) ────────────────────────────────────────────
+[profile.release]
+opt-level     = "z"   # minimise binary size (most important for mobile)
+lto           = true
+codegen-units = 1
+panic         = "abort"
+strip         = true
+debug         = false
+
+# ── Dev profile ───────────────────────────────────────────────────────────────
+[profile.dev]
+opt-level = 1
+panic     = "unwind"
