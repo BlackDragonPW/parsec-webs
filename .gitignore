@@ -11,6 +11,8 @@ local.properties
 android/gradle/wrapper/gradle-wrapper.jar
 .DS_Store
 /build
+android/app/build/
+android/build/
 /captures
 .externalNativeBuild
 .cxx
