@@ -1,0 +1,62 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <color name="accent">#6200EE</color>
+    <color name="accent_dark">#3700B3</color>
+    <color name="accent_light">#BB86FC</color>
+    <color name="background">#121212</color>
+    <color name="icon_disabled">#55FFFFFF</color>
+    <color name="icon_tint">#CCFFFFFF</color>
+    <color name="insecure_red">#F44336</color>
+    <color name="secure_green">#4CAF50</color>
+    <color name="surface">#1E1E1E</color>
+    <color name="surface_variant">#2C2C2C</color>
+    <color name="text_hint">#66FFFFFF</color>
+    <color name="text_on_accent">#FFFFFFFF</color>
+    <color name="text_primary">#FFFFFFFF</color>
+    <color name="text_secondary">#B3FFFFFF</color>
+    <color name="toolbar_bg">#1A1A1A</color>
+    <color name="url_bar_bg">#2C2C2C</color>
+    <color name="url_bar_focused">#3C3C3C</color>
+    <color name="warning_amber">#FF9800</color>
+    <string name="app_name">Parsec Browser</string>
+    <string name="back">Back</string>
+    <string name="bookmark_added">Bookmarked!</string>
+    <string name="close_tab">Close tab</string>
+    <string name="connection_insecure">Connection is not secure</string>
+    <string name="connection_secure">Connection is secure</string>
+    <string name="downloading">Downloading %1$s…</string>
+    <string name="forward">Forward</string>
+    <string name="menu">Menu</string>
+    <string name="new_tab">New Tab</string>
+    <string name="no_app_found">No app to open this URL</string>
+    <string name="reload">Reload</string>
+    <string name="search_hint">Search or enter URL</string>
+    <string name="stop">Stop</string>
+    <string name="tab_count_format">%1$d</string>
+    <style name="ParsecBottomSheetStyle" parent="Widget.MaterialComponents.BottomSheet.Modal">
+        <item name="android:background">@color/surface</item>
+    </style>
+    <style name="Theme.ParsecBrowser" parent="Theme.MaterialComponents.DayNight.NoActionBar">
+        <item name="colorPrimary">@color/accent</item>
+        <item name="colorPrimaryDark">@color/accent_dark</item>
+        <item name="colorAccent">@color/accent</item>
+        <item name="android:windowBackground">@color/background</item>
+        <item name="android:statusBarColor">@android:color/transparent</item>
+        <item name="android:navigationBarColor">@android:color/transparent</item>
+        <item name="android:windowLightStatusBar">false</item>
+        <item name="android:windowLightNavigationBar">false</item>
+        <item name="android:textColorPrimary">@color/text_primary</item>
+        <item name="android:textColorSecondary">@color/text_secondary</item>
+    </style>
+    <style name="Theme.ParsecBrowser.BottomSheet" parent="Theme.MaterialComponents.BottomSheetDialog">
+        <item name="android:background">@color/surface</item>
+        <item name="bottomSheetStyle">@style/ParsecBottomSheetStyle</item>
+    </style>
+    <style name="Theme.ParsecBrowser.NoActionBar">
+        <item name="windowActionBar">false</item>
+        <item name="windowNoTitle">true</item>
+        <item name="android:windowDrawsSystemBarBackgrounds">true</item>
+        <item name="android:statusBarColor">@android:color/transparent</item>
+        <item name="android:navigationBarColor">@android:color/transparent</item>
+    </style>
+</resources>

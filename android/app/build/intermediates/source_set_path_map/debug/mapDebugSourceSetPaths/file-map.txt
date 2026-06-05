@@ -1,0 +1,53 @@
+os.parsec.browser.app-emoji2-views-helper-1.2.0-0 C:\Users\divyaamshu\.gradle\caches\transforms-4\08f76007f546eb785b04825868d67e2f\transformed\emoji2-views-helper-1.2.0\res
+os.parsec.browser.app-savedstate-1.2.1-1 C:\Users\divyaamshu\.gradle\caches\transforms-4\0d1f1678f39a2c9e5ef6b88721d5f567\transformed\savedstate-1.2.1\res
+os.parsec.browser.app-drawerlayout-1.1.1-2 C:\Users\divyaamshu\.gradle\caches\transforms-4\0f1ab270381d2bbd0f33c016abd628f8\transformed\drawerlayout-1.1.1\res
+os.parsec.browser.app-emoji2-1.2.0-3 C:\Users\divyaamshu\.gradle\caches\transforms-4\155680641692980a16f75431f8b6f7fb\transformed\emoji2-1.2.0\res
+os.parsec.browser.app-startup-runtime-1.1.1-4 C:\Users\divyaamshu\.gradle\caches\transforms-4\1a1c4de037ab0e45fc0018cc65b6b6e9\transformed\startup-runtime-1.1.1\res
+os.parsec.browser.app-recyclerview-1.3.2-5 C:\Users\divyaamshu\.gradle\caches\transforms-4\2789684fe52ef0a78def7eb633508a7b\transformed\recyclerview-1.3.2\res
+os.parsec.browser.app-lifecycle-livedata-2.7.0-6 C:\Users\divyaamshu\.gradle\caches\transforms-4\2eee90b72fa03b0d141991481243aecf\transformed\lifecycle-livedata-2.7.0\res
+os.parsec.browser.app-core-1.12.0-7 C:\Users\divyaamshu\.gradle\caches\transforms-4\2fc127297c25dd663bb97c2871ebb09d\transformed\core-1.12.0\res
+os.parsec.browser.app-lifecycle-runtime-2.7.0-8 C:\Users\divyaamshu\.gradle\caches\transforms-4\30f96ecb9449672331a3ee7ab0856adf\transformed\lifecycle-runtime-2.7.0\res
+os.parsec.browser.app-datastore-preferences-1.0.0-9 C:\Users\divyaamshu\.gradle\caches\transforms-4\378823e809463b34647335555e6d801d\transformed\datastore-preferences-1.0.0\res
+os.parsec.browser.app-lifecycle-runtime-ktx-2.7.0-10 C:\Users\divyaamshu\.gradle\caches\transforms-4\43016eb632e19cbdceeb294bdaa888c0\transformed\lifecycle-runtime-ktx-2.7.0\res
+os.parsec.browser.app-lifecycle-process-2.7.0-11 C:\Users\divyaamshu\.gradle\caches\transforms-4\4f171229e56ccbf906d797a451c7f47f\transformed\lifecycle-process-2.7.0\res
+os.parsec.browser.app-core-1.0.0-12 C:\Users\divyaamshu\.gradle\caches\transforms-4\5ba15e246d931d5dd49fa016c5780488\transformed\core-1.0.0\res
+os.parsec.browser.app-sqlite-2.4.0-13 C:\Users\divyaamshu\.gradle\caches\transforms-4\6122db8f1796ec085fc8f14e301df625\transformed\sqlite-2.4.0\res
+os.parsec.browser.app-lifecycle-livedata-core-ktx-2.7.0-14 C:\Users\divyaamshu\.gradle\caches\transforms-4\7684dc905a8139dc35ccf5fade500dde\transformed\lifecycle-livedata-core-ktx-2.7.0\res
+os.parsec.browser.app-room-runtime-2.6.1-15 C:\Users\divyaamshu\.gradle\caches\transforms-4\77b94ebf0699517f05004fb2a461aaea\transformed\room-runtime-2.6.1\res
+os.parsec.browser.app-window-1.2.0-16 C:\Users\divyaamshu\.gradle\caches\transforms-4\7c947d2b2c6307d4e876d9d13e196bba\transformed\window-1.2.0\res
+os.parsec.browser.app-appcompat-resources-1.6.1-17 C:\Users\divyaamshu\.gradle\caches\transforms-4\7d1f1dabfd902d86f2c42f4333b9eb44\transformed\appcompat-resources-1.6.1\res
+os.parsec.browser.app-coil-base-2.5.0-18 C:\Users\divyaamshu\.gradle\caches\transforms-4\8f06753cf5966d857971b9840f46f8fb\transformed\coil-base-2.5.0\res
+os.parsec.browser.app-viewpager2-1.1.0-beta02-19 C:\Users\divyaamshu\.gradle\caches\transforms-4\912958f874282e4a779c9716f56f28c1\transformed\viewpager2-1.1.0-beta02\res
+os.parsec.browser.app-activity-1.8.2-20 C:\Users\divyaamshu\.gradle\caches\transforms-4\9a484398028fe33b543a517ffa82e8e3\transformed\activity-1.8.2\res
+os.parsec.browser.app-fragment-1.6.2-21 C:\Users\divyaamshu\.gradle\caches\transforms-4\9f15c39e408c033908942b7036527b8a\transformed\fragment-1.6.2\res
+os.parsec.browser.app-transition-1.2.0-22 C:\Users\divyaamshu\.gradle\caches\transforms-4\acc0d206ccd72c315d10fddbf1b9fee3\transformed\transition-1.2.0\res
+os.parsec.browser.app-customview-poolingcontainer-1.0.0-23 C:\Users\divyaamshu\.gradle\caches\transforms-4\ad29a3e28750acdded2a0fc27386a3d9\transformed\customview-poolingcontainer-1.0.0\res
+os.parsec.browser.app-biometric-1.1.0-24 C:\Users\divyaamshu\.gradle\caches\transforms-4\b16f5d2e47ed711d8246f435578fd09f\transformed\biometric-1.1.0\res
+os.parsec.browser.app-lifecycle-viewmodel-savedstate-2.7.0-25 C:\Users\divyaamshu\.gradle\caches\transforms-4\ba832e33b2c06f652e224928976cad5d\transformed\lifecycle-viewmodel-savedstate-2.7.0\res
+os.parsec.browser.app-sqlite-framework-2.4.0-26 C:\Users\divyaamshu\.gradle\caches\transforms-4\bbf3a573b564c96c1f8907b749c77a87\transformed\sqlite-framework-2.4.0\res
+os.parsec.browser.app-fragment-ktx-1.6.2-27 C:\Users\divyaamshu\.gradle\caches\transforms-4\bf4d3e718b505bcd61c2606bdba48739\transformed\fragment-ktx-1.6.2\res
+os.parsec.browser.app-lifecycle-livedata-core-2.7.0-28 C:\Users\divyaamshu\.gradle\caches\transforms-4\c28334466d26d3a1456a13de3c62bb52\transformed\lifecycle-livedata-core-2.7.0\res
+os.parsec.browser.app-activity-ktx-1.8.2-29 C:\Users\divyaamshu\.gradle\caches\transforms-4\c37fef85c27037bd7ed093ec68755b74\transformed\activity-ktx-1.8.2\res
+os.parsec.browser.app-swiperefreshlayout-1.1.0-30 C:\Users\divyaamshu\.gradle\caches\transforms-4\c4724aec4ceb0b86dbb2c92480b4afc6\transformed\swiperefreshlayout-1.1.0\res
+os.parsec.browser.app-material-1.11.0-31 C:\Users\divyaamshu\.gradle\caches\transforms-4\c5960e650ee9d8f0b4d16010144ad69b\transformed\material-1.11.0\res
+os.parsec.browser.app-appcompat-1.6.1-32 C:\Users\divyaamshu\.gradle\caches\transforms-4\cdc272da325064e68c30302e0932c48d\transformed\appcompat-1.6.1\res
+os.parsec.browser.app-coordinatorlayout-1.2.0-33 C:\Users\divyaamshu\.gradle\caches\transforms-4\d27334155066ae1604997697c93ece14\transformed\coordinatorlayout-1.2.0\res
+os.parsec.browser.app-core-ktx-1.12.0-34 C:\Users\divyaamshu\.gradle\caches\transforms-4\d3af9d72dd2e61e53d83aaf403efb160\transformed\core-ktx-1.12.0\res
+os.parsec.browser.app-cardview-1.0.0-35 C:\Users\divyaamshu\.gradle\caches\transforms-4\d3fa314be023a935d6c6052475a77bc9\transformed\cardview-1.0.0\res
+os.parsec.browser.app-lifecycle-viewmodel-ktx-2.7.0-36 C:\Users\divyaamshu\.gradle\caches\transforms-4\d6eb141ce3f2e7a6cd845c6e4cf7bfa7\transformed\lifecycle-viewmodel-ktx-2.7.0\res
+os.parsec.browser.app-security-crypto-1.1.0-alpha06-37 C:\Users\divyaamshu\.gradle\caches\transforms-4\d815d63f844f231d50cd3f032885cffe\transformed\security-crypto-1.1.0-alpha06\res
+os.parsec.browser.app-room-ktx-2.6.1-38 C:\Users\divyaamshu\.gradle\caches\transforms-4\dc14cfacc34d5b9114ddaed3a087d1bd\transformed\room-ktx-2.6.1\res
+os.parsec.browser.app-datastore-1.0.0-39 C:\Users\divyaamshu\.gradle\caches\transforms-4\e9a4bfd39799c70511f4cc6b8e20653a\transformed\datastore-1.0.0\res
+os.parsec.browser.app-core-runtime-2.2.0-40 C:\Users\divyaamshu\.gradle\caches\transforms-4\ec2cc35a538187f47b263d1ae063f957\transformed\core-runtime-2.2.0\res
+os.parsec.browser.app-savedstate-ktx-1.2.1-41 C:\Users\divyaamshu\.gradle\caches\transforms-4\f6a839c522e6a55d9c6004e69fa27f5d\transformed\savedstate-ktx-1.2.1\res
+os.parsec.browser.app-constraintlayout-2.1.4-42 C:\Users\divyaamshu\.gradle\caches\transforms-4\f89918e0c0e09c475dcd4f4310f323e2\transformed\constraintlayout-2.1.4\res
+os.parsec.browser.app-lifecycle-viewmodel-2.7.0-43 C:\Users\divyaamshu\.gradle\caches\transforms-4\fc3d248d78519c160d5cfc2343143334\transformed\lifecycle-viewmodel-2.7.0\res
+os.parsec.browser.app-profileinstaller-1.3.1-44 C:\Users\divyaamshu\.gradle\caches\transforms-4\ff05f610fbd4643fc916e6e52630d58a\transformed\profileinstaller-1.3.1\res
+os.parsec.browser.app-annotation-experimental-1.3.0-45 C:\Users\divyaamshu\.gradle\caches\transforms-4\ff688251a60cf11cc7f1e08e00cda8fb\transformed\annotation-experimental-1.3.0\res
+os.parsec.browser.app-pngs-46 D:\VS Code\parsec-browser\android\app\build\generated\res\pngs\debug
+os.parsec.browser.app-resValues-47 D:\VS Code\parsec-browser\android\app\build\generated\res\resValues\debug
+os.parsec.browser.app-packageDebugResources-48 D:\VS Code\parsec-browser\android\app\build\intermediates\incremental\debug\packageDebugResources\merged.dir
+os.parsec.browser.app-packageDebugResources-49 D:\VS Code\parsec-browser\android\app\build\intermediates\incremental\debug\packageDebugResources\stripped.dir
+os.parsec.browser.app-debug-50 D:\VS Code\parsec-browser\android\app\build\intermediates\merged_res\debug\mergeDebugResources
+os.parsec.browser.app-debug-51 D:\VS Code\parsec-browser\android\app\src\debug\res
+os.parsec.browser.app-main-52 D:\VS Code\parsec-browser\android\app\src\main\res
