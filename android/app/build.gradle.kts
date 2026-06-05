@@ -9,6 +9,7 @@ plugins {
 android {
     namespace   = "os.parsec.browser"
     compileSdk  = 34
+    ndkVersion  = "26.3.11579264"
 
     defaultConfig {
         applicationId   = "os.parsec.browser"
@@ -58,12 +59,20 @@ android {
 
 // ── Rust/Cargo integration ─────────────────────────────────────────────────────
 cargo {
-    module        = "../src-rust"
-    libname       = "parsec_core"
-    targets       = listOf("arm64", "x86_64")
-    prebuiltToolchains = true
+    module             = "../../src-rust"
+    libname              = "parsec_core"
+    targets              = listOf("arm64", "x86_64")
+    prebuiltToolchains   = true
+    // Workspace root target dir (src-rust is a Cargo workspace member)
+    targetDirectory      = "../../target"
     // Allow CI to override profile with -Pcargo.profile=debug for faster builds
-    profile       = (project.findProperty("cargo.profile") as? String) ?: "release"
+    profile              = (project.findProperty("cargo.profile") as? String) ?: "release"
+}
+
+tasks.configureEach {
+    if (name.startsWith("merge") && name.endsWith("JniLibFolders")) {
+        dependsOn("cargoBuild")
+    }
 }
 
 dependencies {

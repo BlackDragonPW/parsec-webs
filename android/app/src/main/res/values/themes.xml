@@ -15,7 +15,7 @@
     </style>
 
     <!-- ── No-action-bar variant (used by BrowserActivity) ───────────── -->
-    <style name="Theme.ParsecBrowser.NoActionBar">
+    <style name="Theme.ParsecBrowser.NoActionBar" parent="Theme.ParsecBrowser">
         <item name="windowActionBar">false</item>
         <item name="windowNoTitle">true</item>
         <item name="android:windowDrawsSystemBarBackgrounds">true</item>

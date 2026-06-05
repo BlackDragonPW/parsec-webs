@@ -207,10 +207,9 @@ impl BackgroundWebViewSet {
             .with_url("about:blank")
             .with_initialization_script(&init_js)
             // Background workers get their own IPC channel for event feedback
-            .with_ipc_handler(move |msg: wry::http::Request<String>| {
-                let body = msg.body();
+            .with_ipc_handler(move |body: String| {
                 // Background worker sending event back (console, alarm, etc.)
-                match serde_json::from_str::<serde_json::Value>(body) {
+                match serde_json::from_str::<serde_json::Value>(&body) {
                     Ok(json) => {
                         let ev = json["type"].as_str().unwrap_or("");
                         match ev {

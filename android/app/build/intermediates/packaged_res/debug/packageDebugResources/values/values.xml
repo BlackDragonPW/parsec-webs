@@ -52,7 +52,7 @@
         <item name="android:background">@color/surface</item>
         <item name="bottomSheetStyle">@style/ParsecBottomSheetStyle</item>
     </style>
-    <style name="Theme.ParsecBrowser.NoActionBar">
+    <style name="Theme.ParsecBrowser.NoActionBar" parent="Theme.ParsecBrowser">
         <item name="windowActionBar">false</item>
         <item name="windowNoTitle">true</item>
         <item name="android:windowDrawsSystemBarBackgrounds">true</item>

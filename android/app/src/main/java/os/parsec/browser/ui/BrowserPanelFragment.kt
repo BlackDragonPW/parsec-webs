@@ -11,6 +11,7 @@ import com.google.gson.JsonArray
 import com.google.gson.JsonObject
 import kotlinx.coroutines.*
 import os.parsec.browser.ParsecCore
+import os.parsec.browser.ResourceBlocker
 
 /**
  * BrowserPanelFragment — bottom sheet panel for:
@@ -159,6 +160,15 @@ class BrowserPanelFragment : BottomSheetDialogFragment() {
                 isChecked = curVal
                 setOnCheckedChangeListener { _, checked ->
                     ParsecCore.ipc("""{"id":"s","cmd":"SetPref","args":{"key":"$prefKey","value":$checked}}""")
+                    when (prefKey) {
+                        "block_ads", "block_trackers", "block_nsfw", "https_only" -> {
+                            ResourceBlocker.refreshPrefs(
+                                com.google.gson.JsonParser.parseString(
+                                    ParsecCore.ipc("""{"id":"0","cmd":"GetPrefs","args":{}}""")
+                                ).asJsonObject.getAsJsonObject("data")
+                            )
+                        }
+                    }
                 }
             }
             row.addView(lbl); row.addView(sw)

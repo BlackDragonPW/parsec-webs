@@ -4,7 +4,6 @@ import android.Manifest
 import android.content.Intent
 import android.content.pm.PackageManager
 import android.net.Uri
-import android.net.http.SslErrorHandler
 import android.os.Build
 import android.os.Bundle
 import android.os.Handler
@@ -21,6 +20,8 @@ import androidx.activity.result.contract.ActivityResultContracts
 import androidx.appcompat.app.AppCompatActivity
 import androidx.core.app.ActivityCompat
 import androidx.core.content.ContextCompat
+import android.widget.LinearLayout
+import kotlin.math.max
 import androidx.core.view.*
 import androidx.recyclerview.widget.LinearLayoutManager
 import androidx.recyclerview.widget.RecyclerView
@@ -29,6 +30,8 @@ import com.google.gson.JsonArray
 import com.google.gson.JsonObject
 import kotlinx.coroutines.*
 import os.parsec.browser.ParsecCore
+import os.parsec.browser.ResourceBlocker
+import os.parsec.browser.adapter.SuggestionAdapter
 import os.parsec.browser.R
 import os.parsec.browser.service.DownloadService
 import androidx.core.app.NotificationCompat
@@ -53,6 +56,8 @@ class BrowserActivity : AppCompatActivity() {
     private val scope = CoroutineScope(SupervisorJob() + Dispatchers.Main)
     private val handler = Handler(Looper.getMainLooper())
     private val eventPollRunnable = Runnable { pollEvents() }
+    private var suggestJob: Job? = null
+    private var systemBarBottom = 0
 
     // FIX: replaces deprecated startActivityForResult for file chooser
     private var pendingFileCallback: android.webkit.ValueCallback<Array<android.net.Uri>>? = null
@@ -67,6 +72,7 @@ class BrowserActivity : AppCompatActivity() {
 
     // ── Views ──────────────────────────────────────────────────────────────────
     private lateinit var webViewContainer: FrameLayout
+    private lateinit var webViewStack: FrameLayout
     private lateinit var toolbarLayout: LinearLayout
     private lateinit var urlBar: EditText
     private lateinit var progressBar: ProgressBar
@@ -89,6 +95,7 @@ class BrowserActivity : AppCompatActivity() {
         var loading: Boolean = false,
         var incognito: Boolean = false,
         var pinned: Boolean = false,
+        var ghostFpInjected: Boolean = false,
     )
 
     // ── Lifecycle ──────────────────────────────────────────────────────────────
@@ -98,6 +105,7 @@ class BrowserActivity : AppCompatActivity() {
         setupEdgeToEdge()
         setContentView(R.layout.activity_browser)
         bindViews()
+        setupWindowInsets()
         setupUrlBar()
         setupButtons()
         setupBackHandler()
@@ -106,7 +114,7 @@ class BrowserActivity : AppCompatActivity() {
         val intentUrl = intent?.dataString
         createTab(intentUrl ?: "parsec://newtab", incognito = false)
 
-        // Start polling Rust events at ~60fps
+        // Start polling Rust events (adaptive interval — not fixed 60fps)
         scheduleEventPoll()
     }
 
@@ -114,18 +122,51 @@ class BrowserActivity : AppCompatActivity() {
         WindowCompat.setDecorFitsSystemWindows(window, false)
         window.statusBarColor = android.graphics.Color.TRANSPARENT
         window.navigationBarColor = android.graphics.Color.TRANSPARENT
+        WindowInsetsControllerCompat(window, window.decorView).apply {
+            isAppearanceLightStatusBars = false
+            isAppearanceLightNavigationBars = false
+        }
+    }
+
+    private fun setupWindowInsets() {
+        val root = findViewById<LinearLayout>(R.id.root_coordinator) ?: return
+        ViewCompat.setOnApplyWindowInsetsListener(root) { _, insets ->
+            val typeMask = WindowInsetsCompat.Type.systemBars() or
+                if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.P) {
+                    WindowInsetsCompat.Type.displayCutout()
+                } else {
+                    0
+                }
+            val bars = insets.getInsets(typeMask)
+            val ime = insets.getInsets(WindowInsetsCompat.Type.ime())
+            systemBarBottom = max(bars.bottom, ime.bottom)
+
+            toolbarLayout.updatePadding(left = bars.left, top = bars.top, right = bars.right)
+            webViewContainer.updatePadding(left = bars.left, right = bars.right, bottom = systemBarBottom)
+            insets
+        }
+        ViewCompat.requestApplyInsets(root)
+    }
+
+    private fun updateContentInsets() {
+        findBarView?.let { bar ->
+            (bar.layoutParams as? FrameLayout.LayoutParams)?.let { lp ->
+                lp.bottomMargin = systemBarBottom
+                bar.layoutParams = lp
+            }
+        }
     }
 
     override fun onResume() {
         super.onResume()
-        ParsecCore.onResume()
+        try { ParsecCore.onResume() } catch (_: Throwable) { }
         activeTab()?.webView?.onResume()
         scheduleEventPoll()
     }
 
     override fun onPause() {
         super.onPause()
-        ParsecCore.onPause()
+        try { ParsecCore.onPause() } catch (_: Throwable) { }
         activeTab()?.webView?.onPause()
         handler.removeCallbacks(eventPollRunnable)
     }
@@ -151,6 +192,7 @@ class BrowserActivity : AppCompatActivity() {
 
     private fun bindViews() {
         webViewContainer = findViewById(R.id.webview_container)
+        webViewStack     = findViewById(R.id.webview_stack)
         toolbarLayout    = findViewById(R.id.toolbar_layout)
         urlBar           = findViewById(R.id.url_bar)
         progressBar      = findViewById(R.id.progress_bar)
@@ -183,8 +225,13 @@ class BrowserActivity : AppCompatActivity() {
         urlBar.addTextChangedListener(object : android.text.TextWatcher {
             override fun beforeTextChanged(s: CharSequence?, start: Int, count: Int, after: Int) {}
             override fun onTextChanged(s: CharSequence?, start: Int, before: Int, count: Int) {
-                val query = s?.toString() ?: return
-                if (query.isNotEmpty()) loadSuggestions(query)
+                val query = s?.toString()?.trim() ?: return
+                if (query.isEmpty()) {
+                    suggestJob?.cancel()
+                    suggestionsList.adapter = null
+                    return
+                }
+                loadSuggestions(query)
             }
             override fun afterTextChanged(s: android.text.Editable?) {}
         })
@@ -198,7 +245,9 @@ class BrowserActivity : AppCompatActivity() {
         }
 
         urlBar.setOnEditorActionListener { _, actionId, _ ->
-            if (actionId == EditorInfo.IME_ACTION_GO || actionId == EditorInfo.IME_ACTION_DONE) {
+            if (actionId == EditorInfo.IME_ACTION_GO ||
+                actionId == EditorInfo.IME_ACTION_SEARCH ||
+                actionId == EditorInfo.IME_ACTION_DONE) {
                 val input = urlBar.text.toString().trim()
                 commitNavigate(input)
                 true
@@ -223,10 +272,13 @@ class BrowserActivity : AppCompatActivity() {
     }
 
     private fun loadSuggestions(query: String) {
-        scope.launch(Dispatchers.IO) {
-            val json = ParsecCore.getSuggestions(query)
-            val arr = gson.fromJson(json, JsonArray::class.java)
+        suggestJob?.cancel()
+        suggestJob = scope.launch {
+            delay(250)
+            val json = withContext(Dispatchers.IO) { ParsecCore.getSuggestions(query) }
+            val arr = try { gson.fromJson(json, JsonArray::class.java) } catch (_: Exception) { return@launch }
             withContext(Dispatchers.Main) {
+                if (urlBar.text.toString().trim() != query) return@withContext
                 val adapter = SuggestionAdapter(arr) { url ->
                     hideSuggestions()
                     urlBar.clearFocus()
@@ -242,15 +294,21 @@ class BrowserActivity : AppCompatActivity() {
     // ── Buttons ────────────────────────────────────────────────────────────────
 
     private fun setupButtons() {
-        btnBack.setOnClickListener    { activeTabId?.let { ipc("Back", mapOf("tab_id" to it)) } }
-        btnForward.setOnClickListener { activeTabId?.let { ipc("Forward", mapOf("tab_id" to it)) } }
+        btnBack.setOnClickListener {
+            activeTab()?.webView?.goBack()
+            activeTab()?.let { updateNavButtons(it) }
+        }
+        btnForward.setOnClickListener {
+            activeTab()?.webView?.goForward()
+            activeTab()?.let { updateNavButtons(it) }
+        }
         btnReload.setOnClickListener  {
             activeTabId?.let { id ->
                 val tab = tabs[id]
                 if (tab?.loading == true) {
                     tab.webView.stopLoading()
                 } else {
-                    ipc("Reload", mapOf("tab_id" to id))
+                    tab?.webView?.reload()
                 }
             }
         }
@@ -289,7 +347,7 @@ class BrowserActivity : AppCompatActivity() {
         val entry = TabEntry(id = tabId, webView = webView, url = url, incognito = incognito)
         tabs[tabId] = entry
 
-        webViewContainer.addView(webView, FrameLayout.LayoutParams(
+        webViewStack.addView(webView, FrameLayout.LayoutParams(
             FrameLayout.LayoutParams.MATCH_PARENT,
             FrameLayout.LayoutParams.MATCH_PARENT
         ))
@@ -316,7 +374,7 @@ class BrowserActivity : AppCompatActivity() {
 
     fun closeTab(tabId: String) {
         val entry = tabs.remove(tabId) ?: return
-        webViewContainer.removeView(entry.webView)
+        webViewStack.removeView(entry.webView)
         entry.webView.destroy()
         // Ghost Mode: zero ephemeral keys immediately on close
         if (entry.incognito) {
@@ -333,48 +391,44 @@ class BrowserActivity : AppCompatActivity() {
     }
 
     fun switchToTab(tabId: String) {
-        tabs[activeTabId]?.webView?.visibility = View.INVISIBLE
+        tabs.forEach { (id, entry) ->
+            if (id == tabId) {
+                entry.webView.visibility = View.VISIBLE
+                entry.webView.onResume()
+                entry.webView.resumeTimers()
+            } else {
+                entry.webView.visibility = View.GONE
+                entry.webView.onPause()
+                entry.webView.pauseTimers()
+            }
+        }
         activeTabId = tabId
         val tab = tabs[tabId] ?: return
-        tab.webView.visibility = View.VISIBLE
         tab.webView.bringToFront()
+        tab.webView.requestFocus()
         updateUrlBar(tab)
         updateNavButtons(tab)
         ipc("SwitchTab", mapOf("tab_id" to tabId))
-        // Ghost Mode: show encrypted session banner when switching to incognito
-        if (tabs[tabId]?.incognito == true) {
+        if (tab.incognito) {
             showGhostBanner(tabId)
         }
+    }
+
+    /** Called from new-tab page JS bridge. */
+    fun navigateFromBridge(tabId: String, input: String) {
+        if (input.isEmpty()) return
+        navigateTab(tabId, input)
     }
 
     private fun navigateTab(tabId: String, input: String) {
         val url = normalizeUrl(input)
         val tab = tabs[tabId] ?: return
 
-        // Ask Rust if navigation is allowed (HTTPS upgrade / ad block check)
-        scope.launch(Dispatchers.IO) {
-            val result = ParsecCore.shouldAllowNavigation(tabId, url)
-            val json = gson.fromJson(result, JsonObject::class.java)
-            withContext(Dispatchers.Main) {
-                when {
-                    json.get("allow")?.asBoolean == true -> {
-                        tab.webView.loadUrl(url)
-                        tab.url = url
-                    }
-                    json.get("redirect_url")?.isJsonNull == false -> {
-                        val redirectUrl = json.get("redirect_url").asString
-                        tab.webView.loadUrl(redirectUrl)
-                        tab.url = redirectUrl
-                    }
-                    else -> {
-                        // Blocked — show blocked page
-                        val reason = json.get("reason")?.asString ?: "blocked"
-                        loadBlockedPage(tab.webView, url, reason)
-                    }
-                }
-                updateUrlBar(tab)
-            }
-        }
+        val decision = ResourceBlocker.checkNavigation(url)
+        val target = decision.redirectUrl ?: url
+        tab.webView.loadUrl(target)
+        tab.url = target
+        updateUrlBar(tab)
     }
 
     private fun activeTab() = activeTabId?.let { tabs[it] }
@@ -388,7 +442,6 @@ class BrowserActivity : AppCompatActivity() {
         wv.settings.apply {
             javaScriptEnabled       = true
             domStorageEnabled       = true
-            databaseEnabled         = true
             setSupportZoom(true)
             builtInZoomControls     = true
             displayZoomControls     = false
@@ -400,6 +453,11 @@ class BrowserActivity : AppCompatActivity() {
             mediaPlaybackRequiresUserGesture = false
             allowFileAccess         = false
             allowContentAccess      = false
+            cacheMode               = WebSettings.LOAD_DEFAULT
+            loadsImagesAutomatically = true
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
+                safeBrowsingEnabled = true
+            }
 
             // HTTP/2 + Brotli + Brotli handled by the system WebView (via OS WebView)
             userAgentString = if (incognito) {
@@ -421,38 +479,47 @@ class BrowserActivity : AppCompatActivity() {
         if (incognito) {
             wv.clearCache(true)
             wv.clearHistory()
-            // Ghost Mode: separate cookie store for every incognito tab
-            // Cookies cannot leak between incognito tabs or to normal tabs
-            CookieManager.getInstance().setAcceptCookie(false)
-            CookieManager.getInstance().removeAllCookies(null)
-            CookieManager.getInstance().flush()
-            // Disable DOM storage for this WebView — no localStorage, sessionStorage
             wv.settings.domStorageEnabled = false
-            // Block all form data autofill
             wv.settings.saveFormData = false
-            // Disable AppCache (deprecated but some WebViews still honour it)
-            @Suppress("DEPRECATION")
-            wv.settings.setAppCacheEnabled(false)
+            CookieManager.getInstance().setAcceptThirdPartyCookies(wv, false)
         } else {
             CookieManager.getInstance().setAcceptCookie(true)
-            CookieManager.getInstance().setAcceptThirdPartyCookies(wv, false)
+            // Required for YouTube (googlevideo.com), Google login, embeds
+            CookieManager.getInstance().setAcceptThirdPartyCookies(wv, true)
         }
 
-        // P2-fix: Enable Safe Browsing (phishing/malware URL checks)
-        wv.setSafeBrowsingEnabled(true)
+        wv.isFocusable = true
+        wv.isFocusableInTouchMode = true
+        wv.setOnTouchListener { _, event ->
+            if (event.action == MotionEvent.ACTION_DOWN && urlBar.hasFocus()) {
+                urlBar.clearFocus()
+                hideKeyboard()
+                wv.requestFocus()
+            }
+            false
+        }
+
+        wv.overScrollMode = View.OVER_SCROLL_IF_CONTENT_SCROLLS
+        wv.isScrollbarFadingEnabled = true
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
+            try {
+                wv.setRendererPriorityPolicy(WebView.RENDERER_PRIORITY_IMPORTANT, false)
+            } catch (_: Exception) { /* optional on some WebView builds */ }
+        }
 
         wv.webViewClient = ParsecWebViewClient(tabId, incognito)
         wv.webChromeClient = ParsecWebChromeClient(tabId)
+        wv.addJavascriptInterface(ParsecJsBridge(this, tabId), "ParsecAndroid")
 
         return wv
     }
 
     private fun buildUserAgent(desktopMode: Boolean): String {
         return if (desktopMode) {
-            "Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36 ParsecBrowser/1.3"
+            "Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36"
         } else {
-            val base = WebSettings.getDefaultUserAgent(this)
-            "$base ParsecBrowser/1.3"
+            // Stock WebView UA — custom suffix breaks YouTube video + input on many devices
+            WebSettings.getDefaultUserAgent(this)
         }
     }
 
@@ -464,58 +531,30 @@ class BrowserActivity : AppCompatActivity() {
     ) : WebViewClient() {
 
         override fun shouldOverrideUrlLoading(view: WebView, request: WebResourceRequest): Boolean {
+            if (!request.isForMainFrame) return false
             val url = request.url.toString()
 
-            // Handle parsec:// internal URLs
             if (url.startsWith("parsec://")) {
                 handleInternalUrl(tabId, url)
                 return true
             }
 
-            // External app intent (tel:, mailto:, market:, etc.)
             if (!url.startsWith("http://") && !url.startsWith("https://")) {
                 try {
                     startActivity(Intent(Intent.ACTION_VIEW, Uri.parse(url)))
-                } catch (e: Exception) { /* ignore */ }
+                } catch (_: Exception) { }
                 return true
             }
 
-            // Ask Rust — HTTPS upgrade / blocking
-            scope.launch(Dispatchers.IO) {
-                val result = ParsecCore.shouldAllowNavigation(tabId, url)
-                val json = gson.fromJson(result, JsonObject::class.java)
-                withContext(Dispatchers.Main) {
-                    when {
-                        json.get("allow")?.asBoolean == true -> view.loadUrl(url)
-                        json.get("redirect_url")?.isJsonNull == false ->
-                            view.loadUrl(json.get("redirect_url").asString)
-                        else -> {
-                            val reason = json.get("reason")?.asString ?: "blocked"
-                            loadBlockedPage(view, url, reason)
-                        }
-                    }
-                }
+            val decision = ResourceBlocker.checkNavigation(url)
+            if (decision.redirectUrl != null) {
+                view.loadUrl(decision.redirectUrl)
+                return true
             }
-            return true
+            return false
         }
 
-        override fun shouldInterceptRequest(
-            view: WebView,
-            request: WebResourceRequest
-        ): WebResourceResponse? {
-            val url = request.url.toString()
-            val rtype = request.requestHeaders["Accept"] ?: ""
-
-            // Ask Rust blocker (runs off main thread — this is already a bg thread)
-            val result = ParsecCore.shouldBlockResource(tabId, url, rtype)
-            val json = gson.fromJson(result, JsonObject::class.java)
-
-            return if (json.get("block")?.asBoolean == true) {
-                // Return empty 204 response — blocks the resource
-                WebResourceResponse("text/plain", "UTF-8", 204, "Blocked",
-                    emptyMap(), java.io.ByteArrayInputStream(ByteArray(0)))
-            } else null
-        }
+        // Subresource intercept removed — it runs per asset and causes universal jank.
 
         override fun onPageStarted(view: WebView, url: String, favicon: android.graphics.Bitmap?) {
             tabs[tabId]?.loading = true
@@ -525,7 +564,6 @@ class BrowserActivity : AppCompatActivity() {
                 updateUrlBarText(url)
                 btnReload.setImageResource(android.R.drawable.ic_menu_close_clear_cancel)
             }
-            ParsecCore.onTabUpdated(tabId, url, tabs[tabId]?.title ?: "", false, false, true)
         }
 
         override fun onPageFinished(view: WebView, url: String) {
@@ -539,20 +577,16 @@ class BrowserActivity : AppCompatActivity() {
                 updateLockIcon(url)
                 btnReload.setImageResource(android.R.drawable.ic_menu_rotate)
             }
-            ParsecCore.onTabUpdated(
-                tabId, url, view.title ?: url,
-                view.canGoBack(), view.canGoForward(), false
-            )
             updateNavButtons(tabs[tabId])
-            if (!incognito) {
-                // Normal mode: inject DNT header
-                view.evaluateJavascript(
-                    "navigator.doNotTrack = '1'; Object.defineProperty(navigator, 'doNotTrack', {value: '1', writable: false});",
-                    null
-                )
-            } else {
-                // Ghost Mode: inject comprehensive anti-fingerprinting JS
-                view.evaluateJavascript(ghostAntiFingerprint(), null)
+            if (incognito) {
+                tabs[tabId]?.let { tab ->
+                    if (!tab.ghostFpInjected) {
+                        tab.ghostFpInjected = true
+                        handler.postDelayed({
+                            view.evaluateJavascript(ghostAntiFingerprint(), null)
+                        }, 500)
+                    }
+                }
             }
         }
 
@@ -582,7 +616,7 @@ class BrowserActivity : AppCompatActivity() {
         }
 
         override fun onReceivedIcon(view: WebView, icon: android.graphics.Bitmap) {
-            ParsecCore.onFaviconChanged(tabId, "bitmap")
+            // Skip JNI on every favicon — not worth the main-thread cost
         }
 
         override fun onCreateWindow(
@@ -598,7 +632,12 @@ class BrowserActivity : AppCompatActivity() {
         }
 
         override fun onPermissionRequest(request: PermissionRequest) {
-            // Request camera/microphone for WebRTC
+            // YouTube/media need autoplay + protected media; grant protected media always
+            val resources = request.resources.toMutableList()
+            if (PermissionRequest.RESOURCE_PROTECTED_MEDIA_ID in resources) {
+                request.grant(resources.toTypedArray())
+                return
+            }
             val needed = mutableListOf<String>()
             if (PermissionRequest.RESOURCE_VIDEO_CAPTURE in request.resources) needed += Manifest.permission.CAMERA
             if (PermissionRequest.RESOURCE_AUDIO_CAPTURE in request.resources) needed += Manifest.permission.RECORD_AUDIO
@@ -634,11 +673,15 @@ class BrowserActivity : AppCompatActivity() {
     private fun handleInternalUrl(tabId: String, url: String) {
         val tab = tabs[tabId] ?: return
         when {
-            url == "parsec://newtab"   -> loadNewTabPage(tab.webView)
-            url == "parsec://history"  -> showPanel("history")
-            url == "parsec://bookmarks"-> showPanel("bookmarks")
-            url == "parsec://settings" -> showPanel("settings")
-            url == "parsec://downloads"-> showPanel("downloads")
+            url == "parsec://newtab" -> loadNewTabPage(tab.webView)
+            url.startsWith("parsec://search") -> {
+                val q = Uri.parse(url).getQueryParameter("q") ?: return
+                navigateTab(tabId, q)
+            }
+            url == "parsec://history"   -> showPanel("history")
+            url == "parsec://bookmarks" -> showPanel("bookmarks")
+            url == "parsec://settings"  -> showPanel("settings")
+            url == "parsec://downloads" -> showPanel("downloads")
             url.startsWith("parsec://") -> loadNewTabPage(tab.webView)
         }
     }
@@ -703,7 +746,21 @@ class BrowserActivity : AppCompatActivity() {
           background: ${if (isGhost) "linear-gradient(135deg,#7c3aed,#4f46e5)" else "linear-gradient(135deg,#667eea,#764ba2)"};
           -webkit-background-clip:text; -webkit-text-fill-color:transparent;
           margin-bottom:8px; }
-  .tagline { color:#718096; font-size:13px; margin-bottom:40px; }
+  .tagline { color:#718096; font-size:13px; margin-bottom:32px; }
+  .search-wrap { width:100%; max-width:520px; margin-bottom:28px; }
+  .search-form { display:flex; gap:8px; width:100%; }
+  .search-input {
+    flex:1; height:48px; border-radius:24px; border:1px solid #2d3748;
+    background:#1a1a2e; color:#e2e8f0; font-size:16px; padding:0 20px;
+    outline:none;
+  }
+  .search-input:focus { border-color:#667eea; box-shadow:0 0 0 3px rgba(102,126,234,0.25); }
+  .search-btn {
+    height:48px; padding:0 22px; border-radius:24px; border:none;
+    background:linear-gradient(135deg,#667eea,#764ba2); color:#fff;
+    font-size:15px; font-weight:600; cursor:pointer;
+  }
+  .search-btn:active { opacity:0.85; }
   .shortcuts { display:grid; grid-template-columns:repeat(4,1fr); gap:12px;
                width:100%; max-width:400px; margin-bottom:32px; }
   .shortcut { background:#1a1a2e; border:1px solid #2d3748; border-radius:16px;
@@ -728,7 +785,14 @@ class BrowserActivity : AppCompatActivity() {
 <body>
 $ghostBadge
 <div class="logo">Parsec</div>
-<div class="tagline">${if (isGhost) "Ghost Mode • Zero-knowledge browsing" else "Privacy-first browser · GPU accelerated · HTTP/3"}</div>
+<div class="tagline">${if (isGhost) "Ghost Mode • Zero-knowledge browsing" else "Search the web · Private · Fast"}</div>
+<div class="search-wrap">
+  <form class="search-form" action="parsec://search" onsubmit="return doSearch(event)">
+    <input class="search-input" id="ntp-search" type="search" enterkeyhint="search"
+           placeholder="Search Google or type a URL" autocomplete="off" autofocus />
+    <button class="search-btn" type="submit">Search</button>
+  </form>
+</div>
 <div class="shortcuts">
   <a class="shortcut" href="https://github.com"><div class="icon">🐙</div><div class="label">GitHub</div></a>
   <a class="shortcut" href="https://news.ycombinator.com"><div class="icon">🟧</div><div class="label">HN</div></a>
@@ -755,14 +819,27 @@ ${if (isGhost) """
   </div>
 </div>""" else ""}
 <script>
+  function doSearch(e) {
+    e.preventDefault();
+    const q = document.getElementById('ntp-search').value.trim();
+    if (!q) return false;
+    if (window.ParsecAndroid) {
+      window.ParsecAndroid.search(q);
+    } else {
+      location.href = 'parsec://search?q=' + encodeURIComponent(q);
+    }
+    return false;
+  }
   setTimeout(() => {
     if (window.ParsecAndroid) {
-      const s = JSON.parse(window.ParsecAndroid.getPrivacyStats());
-      document.getElementById('ads').textContent      = (s.ads_blocked||0).toLocaleString();
-      document.getElementById('trackers').textContent = (s.trackers_blocked||0).toLocaleString();
-      const b = s.bytes_saved||0;
-      document.getElementById('bytes').textContent    = b<1048576?(b/1024).toFixed(0)+'KB':(b/1048576).toFixed(1)+'MB';
-      document.getElementById('total').textContent    = (s.requests_total||0).toLocaleString();
+      try {
+        const s = JSON.parse(window.ParsecAndroid.getPrivacyStats());
+        document.getElementById('ads').textContent      = (s.ads_blocked||0).toLocaleString();
+        document.getElementById('trackers').textContent = (s.trackers_blocked||0).toLocaleString();
+        const b = s.bytes_saved||0;
+        document.getElementById('bytes').textContent    = b<1048576?(b/1024).toFixed(0)+'KB':(b/1048576).toFixed(1)+'MB';
+        document.getElementById('total').textContent    = (s.requests_total||0).toLocaleString();
+      } catch(e) {}
     }
   }, 100);
 </script>
@@ -781,21 +858,26 @@ ${if (isGhost) """
     // ── Event polling ──────────────────────────────────────────────────────────
 
     private fun scheduleEventPoll() {
-        handler.postDelayed(eventPollRunnable, 16)
+        handler.removeCallbacks(eventPollRunnable)
+        handler.postDelayed(eventPollRunnable, 150)
     }
 
     private fun pollEvents() {
-        val json = ParsecCore.pollEvents()
-        if (json != "[]") {
-            try {
+        val hasEvents = try {
+            val json = ParsecCore.pollEvents()
+            if (json != "[]") {
                 val events = gson.fromJson(json, JsonArray::class.java)
                 events.forEach { elem ->
-                    val ev = elem.asJsonObject
-                    handleRustEvent(ev)
+                    handleRustEvent(elem.asJsonObject)
                 }
-            } catch (e: Exception) { /* ignore parse errors */ }
+                true
+            } else {
+                false
+            }
+        } catch (_: Exception) {
+            false
         }
-        handler.postDelayed(eventPollRunnable, 16)
+        handler.postDelayed(eventPollRunnable, if (hasEvents) 64L else 500L)
     }
 
     private fun handleRustEvent(ev: JsonObject) {
@@ -1166,9 +1248,12 @@ ${if (isGhost) """
             FrameLayout.LayoutParams.MATCH_PARENT,
             FrameLayout.LayoutParams.WRAP_CONTENT,
             Gravity.BOTTOM
-        )
+        ).apply {
+            bottomMargin = systemBarBottom
+        }
         rootFrame.addView(bar, params)
         findBarView = bar
+        updateContentInsets()
 
         // Auto-show keyboard
         input.requestFocus()
@@ -1232,14 +1317,21 @@ ${if (isGhost) """
     // ── URL normalisation ──────────────────────────────────────────────────────
 
     private fun normalizeUrl(input: String): String {
-        if (input.startsWith("parsec:") || input.startsWith("about:")) return input
-        if (input.startsWith("https://") || input.startsWith("http://")) return input
-        val domain = Regex("^[a-z0-9][a-z0-9\\-]*\\.[a-z]{2,}", RegexOption.IGNORE_CASE)
-        if (domain.containsMatchIn(input.split("/").first()) && !input.contains(' ')) {
-            return "https://$input"
-        }
-        val q = Uri.encode(input)
-        return "https://search.parsec.os/search?q=$q"
+        val trimmed = input.trim()
+        if (trimmed.isEmpty()) return "parsec://newtab"
+        if (trimmed.startsWith("parsec:") || trimmed.startsWith("about:")) return trimmed
+        if (trimmed.startsWith("https://") || trimmed.startsWith("http://")) return trimmed
+        if (looksLikeUrl(trimmed)) return "https://$trimmed"
+        return ResourceBlocker.buildSearchUrl(trimmed)
+    }
+
+    private fun looksLikeUrl(input: String): Boolean {
+        if (input.contains(' ') || input.contains('@')) return false
+        val host = input.split("/").first().split(":").first()
+        if (host == "localhost") return true
+        if (host.matches(Regex("^\\d{1,3}(\\.\\d{1,3}){3}$"))) return true
+        return host.contains('.') &&
+            Regex("^[a-z0-9][a-z0-9.-]*\\.[a-z]{2,}$", RegexOption.IGNORE_CASE).matches(host)
     }
 
     private fun hideKeyboard() {
@@ -1408,7 +1500,9 @@ ${if (isGhost) """
             android.widget.FrameLayout.LayoutParams.MATCH_PARENT,
             android.widget.FrameLayout.LayoutParams.WRAP_CONTENT,
             android.view.Gravity.TOP
-        )
+        ).apply {
+            topMargin = toolbarLayout.height
+        }
 
         val rootFrame = window.decorView.findViewById<android.widget.FrameLayout>(android.R.id.content)
         rootFrame.addView(banner, params)

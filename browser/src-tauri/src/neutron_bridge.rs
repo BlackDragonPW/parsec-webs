@@ -1,4 +1,3 @@
-#![allow(unused_variables, dead_code, unused_imports, unused_mut, unreachable_patterns, non_camel_case_types, unused_parens, unreachable_code, unused_assignments, hidden_glob_reexports)]
 //! neutron_bridge.rs — Neutron Engine: complete Rust render pipeline
 //!
 //! Zero TODOs. Zero placeholders. Full wgpu pipeline.
@@ -48,6 +47,10 @@ unsafe impl Send for SceneView {}
 unsafe impl Sync for SceneView {}
 
 impl SceneView {
+    pub fn new(ptr: *const u8) -> Self {
+        Self { ptr }
+    }
+
     fn gen(&self) -> u32 {
         unsafe { (*(self.ptr.add(OFF_GEN) as *const AtomicU32)).load(Ordering::Acquire) }
     }
@@ -304,7 +307,7 @@ const CELL: f32 = 16.0;
 struct GpuState {
     device:           wgpu::Device,
     queue:            wgpu::Queue,
-    surface:          wgpu::Surface,
+    surface:          wgpu::Surface<'static>,
     surface_config:   wgpu::SurfaceConfiguration,
     uniform_buf:      wgpu::Buffer,
     rect_pipeline:    wgpu::RenderPipeline,
@@ -319,14 +322,18 @@ struct GpuState {
 }
 
 impl GpuState {
-    fn new(
-        wh: raw_window_handle::RawWindowHandle,
-        dh: raw_window_handle::RawDisplayHandle,
-        w: u32, h: u32,
-    ) -> Result<Self> {
+    fn new(handles: SendRawHandles, w: u32, h: u32) -> Result<Self> {
+        let wh = handles.window;
+        let dh = handles.display;
         let inst = wgpu::Instance::new(wgpu::InstanceDescriptor { backends: wgpu::Backends::all(), ..Default::default() });
-        let surface = unsafe { inst.create_surface_unsafe(wgpu::SurfaceTargetUnsafe::RawHandle {
-            raw_display_handle: dh, raw_window_handle: wh })? };
+        let surface: wgpu::Surface<'_> = unsafe {
+            inst.create_surface_unsafe(wgpu::SurfaceTargetUnsafe::RawHandle {
+                raw_display_handle: dh,
+                raw_window_handle: wh,
+            })?
+        };
+        // SAFETY: the OS window outlives this render thread (owned by tao).
+        let surface: wgpu::Surface<'static> = unsafe { std::mem::transmute(surface) };
         let adapter = pollster::block_on(inst.request_adapter(&wgpu::RequestAdapterOptions {
             power_preference: wgpu::PowerPreference::HighPerformance,
             compatible_surface: Some(&surface), force_fallback_adapter: false,
@@ -587,6 +594,13 @@ impl GpuState {
 
 // ── Render thread ─────────────────────────────────────────────────────────────
 
+struct SendRawHandles {
+    window: raw_window_handle::RawWindowHandle,
+    display: raw_window_handle::RawDisplayHandle,
+}
+
+unsafe impl Send for SendRawHandles {}
+
 pub fn spawn_render_thread(
     scene: Arc<Mutex<SceneView>>,
     wh: raw_window_handle::RawWindowHandle,
@@ -595,11 +609,12 @@ pub fn spawn_render_thread(
     font_bytes: Vec<u8>,
 ) -> thread::Thread {
     let (tx, rx) = std::sync::mpsc::sync_channel::<thread::Thread>(1);
+    let handles = SendRawHandles { window: wh, display: dh };
 
     thread::Builder::new().name("neutron-render".into()).spawn(move || {
         let _ = tx.send(thread::current());
 
-        let mut gpu = match GpuState::new(wh, dh, w, h) {
+        let mut gpu = match GpuState::new(handles, w, h) {
             Ok(g) => g,
             Err(e) => { error!("Neutron GPU init: {e:#}"); return; }
         };
@@ -634,32 +649,18 @@ pub fn spawn_render_thread(
 
 // ── Globals ───────────────────────────────────────────────────────────────────
 
-static SCENE:  OnceLock<Arc<Mutex<SceneView>>>  = OnceLock::new();
-static ATLAS:  OnceLock<Arc<Mutex<GlyphAtlas>>> = OnceLock::new();
-static RTHREAD:OnceLock<thread::Thread>         = OnceLock::new();
+pub(crate) static SCENE:  OnceLock<Arc<Mutex<SceneView>>>  = OnceLock::new();
+pub(crate) static ATLAS:  OnceLock<Arc<Mutex<GlyphAtlas>>> = OnceLock::new();
+pub(crate) static RTHREAD: OnceLock<thread::Thread>         = OnceLock::new();
 
-// ── Tauri commands ────────────────────────────────────────────────────────────
+// ── Legacy GPUI invoke targets (superseded by handle_neutron_ipc) ─────────────
 
-#[tauri::command]
-pub fn neutron_register_scene(window: tauri::Window, sab_ptr: usize, sab_len: usize) {
-    use raw_window_handle::{HasRawDisplayHandle, HasRawWindowHandle};
-    let view = SceneView { ptr: sab_ptr as *const u8 };
-    let arc  = Arc::new(Mutex::new(view));
-    if SCENE.set(arc.clone()).is_err() { warn!("neutron_register_scene: already registered"); return; }
-    let (w, h) = window.inner_size().map(|s|(s.width,s.height)).unwrap_or((1280,800));
-    let wh = unsafe { window.raw_window_handle() };
-    let dh = unsafe { window.raw_display_handle() };
-    let th = spawn_render_thread(arc, wh, dh, w, h, load_font_bytes());
-    let _  = RTHREAD.set(th);
-    info!("Neutron registered ({}×{})", w, h);
-}
-
-#[tauri::command]
+#[allow(dead_code)]
 pub fn neutron_set_surface_rect(_x: f32, _y: f32, _width: f32, _height: f32) {
     if let Some(t) = RTHREAD.get() { t.unpark(); }
 }
 
-#[tauri::command]
+#[allow(dead_code)]
 pub fn neutron_init_glyph_table(codepoints: Vec<u32>, font_size_px: f32) -> Vec<u32> {
     let atlas = ATLAS.get_or_init(|| {
         let font = FontArc::try_from_vec(load_font_bytes()).expect("font");
@@ -669,7 +670,7 @@ pub fn neutron_init_glyph_table(codepoints: Vec<u32>, font_size_px: f32) -> Vec<
     codepoints.iter().flat_map(|&cp| { let id = a.ensure(cp); [cp, id as u32] }).collect()
 }
 
-#[tauri::command]
+#[allow(dead_code)]
 pub fn neutron_rasterize_glyphs(codepoints: Vec<u32>) -> Vec<u32> {
     let Some(atlas) = ATLAS.get() else { return vec![]; };
     let mut a = atlas.lock().unwrap();
@@ -678,7 +679,7 @@ pub fn neutron_rasterize_glyphs(codepoints: Vec<u32>) -> Vec<u32> {
     out
 }
 
-fn load_font_bytes() -> Vec<u8> {
+pub(crate) fn load_font_bytes() -> Vec<u8> {
     for p in &[
         "/usr/share/fonts/truetype/jetbrains-mono/JetBrainsMono-Regular.ttf",
         "/usr/share/fonts/TTF/JetBrainsMono-Regular.ttf",

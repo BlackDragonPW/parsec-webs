@@ -35,10 +35,12 @@ id btn_reload
 id btn_tabs
 id lock_icon
 id progress_bar
+id root_coordinator
 id suggestions_list
 id toolbar_layout
 id url_bar
 id webview_container
+id webview_stack
 layout activity_browser
 mipmap ic_launcher
 mipmap ic_launcher_round

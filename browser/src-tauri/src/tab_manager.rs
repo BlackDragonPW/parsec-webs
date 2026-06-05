@@ -141,7 +141,7 @@ impl TabManager {
         );
 
         // Chrome extension content-script shim
-        let chrome_shim = include_str!("../../../../extensions/chrome-compat.js");
+        let chrome_shim = include_str!("../../extensions/chrome-compat.js");
 
         // ── Chrome compatibility shim ─────────────────────────────────
         // Injected before any page JS. Fixes sites that UA-sniff or feature-
@@ -411,9 +411,8 @@ impl TabManager {
             // ── IPC handler ───────────────────────────────────────────
             // Page JS calls window.ipc.postMessage(JSON) to send events
             // back to Rust (title changes, favicon, etc.)
-            .with_ipc_handler(move |msg: wry::http::Request<String>| {
-                let body = msg.body();
-                match serde_json::from_str::<serde_json::Value>(body) {
+            .with_ipc_handler(move |body: String| {
+                match serde_json::from_str::<serde_json::Value>(&body) {
                     Ok(json) => {
                         let ev_type = json["type"].as_str().unwrap_or("");
                         match ev_type {
@@ -443,7 +442,6 @@ impl TabManager {
             // ── macOS native content rules ───────────────────────────
             // WKContentRuleList blocks resources before TCP connects.
             // This is the gold-standard mechanism — same as Safari's blocker.
-            .with_content_protection(false)
             .build()?;
 
         // Apply macOS native content rules if available

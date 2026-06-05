@@ -6,7 +6,8 @@
 // This gives engine-level blocking equivalent to WKContentRuleList on desktop.
 
 use std::collections::HashSet;
-use std::sync::{OnceLock, Mutex};
+use std::sync::atomic::{AtomicU64, Ordering};
+use std::sync::{OnceLock};
 use serde::{Deserialize, Serialize};
 use crate::BrowserPrefs;
 
@@ -21,13 +22,16 @@ pub struct BlockStats {
     pub requests_total:   u64,
 }
 
-static STATS:    OnceLock<Mutex<BlockStats>> = OnceLock::new();
+static ADS_BLOCKED:      AtomicU64 = AtomicU64::new(0);
+static TRK_BLOCKED:      AtomicU64 = AtomicU64::new(0);
+static POPUPS_BLOCKED:   AtomicU64 = AtomicU64::new(0);
+static NSFW_BLOCKED:     AtomicU64 = AtomicU64::new(0);
+static MINERS_BLOCKED:   AtomicU64 = AtomicU64::new(0);
+static BYTES_SAVED:      AtomicU64 = AtomicU64::new(0);
+static REQUESTS_TOTAL:   AtomicU64 = AtomicU64::new(0);
+
 static AD_HOSTS: OnceLock<HashSet<String>>  = OnceLock::new();
 static TR_HOSTS: OnceLock<HashSet<String>>  = OnceLock::new();
-
-fn stats() -> &'static Mutex<BlockStats> {
-    STATS.get_or_init(|| Mutex::new(BlockStats::default()))
-}
 
 pub fn init() {
     AD_HOSTS.get_or_init(|| build_ad_hosts());
@@ -37,12 +41,47 @@ pub fn init() {
         TR_HOSTS.get().map(|h| h.len()).unwrap_or(0));
 }
 
+/// JSON block-lists for Kotlin-side hot-path blocking (loaded once at startup).
+pub fn block_lists_json() -> String {
+    init();
+    let ads: Vec<&String> = AD_HOSTS.get().map(|h| h.iter().collect()).unwrap_or_default();
+    let trk: Vec<&String> = TR_HOSTS.get().map(|h| h.iter().collect()).unwrap_or_default();
+    serde_json::json!({ "ads": ads, "trackers": trk }).to_string()
+}
+
+/// Record a block event from Kotlin (stats only — no URL parsing).
+pub fn record_block(reason: &str) {
+    REQUESTS_TOTAL.fetch_add(1, Ordering::Relaxed);
+    match reason {
+        "ads"      => { ADS_BLOCKED.fetch_add(1, Ordering::Relaxed); BYTES_SAVED.fetch_add(25_000, Ordering::Relaxed); }
+        "trackers" => { TRK_BLOCKED.fetch_add(1, Ordering::Relaxed); BYTES_SAVED.fetch_add(8_000, Ordering::Relaxed); }
+        "nsfw"     => { NSFW_BLOCKED.fetch_add(1, Ordering::Relaxed); }
+        "miners"   => { MINERS_BLOCKED.fetch_add(1, Ordering::Relaxed); }
+        "popups"   => { POPUPS_BLOCKED.fetch_add(1, Ordering::Relaxed); }
+        _ => {}
+    }
+}
+
 pub fn get_stats() -> BlockStats {
-    stats().lock().unwrap().clone()
+    BlockStats {
+        ads_blocked:      ADS_BLOCKED.load(Ordering::Relaxed),
+        trackers_blocked: TRK_BLOCKED.load(Ordering::Relaxed),
+        popups_blocked:   POPUPS_BLOCKED.load(Ordering::Relaxed),
+        nsfw_blocked:     NSFW_BLOCKED.load(Ordering::Relaxed),
+        miners_blocked:   MINERS_BLOCKED.load(Ordering::Relaxed),
+        bytes_saved:      BYTES_SAVED.load(Ordering::Relaxed),
+        requests_total:   REQUESTS_TOTAL.load(Ordering::Relaxed),
+    }
 }
 
 pub fn reset_stats() {
-    *stats().lock().unwrap() = BlockStats::default();
+    ADS_BLOCKED.store(0, Ordering::Relaxed);
+    TRK_BLOCKED.store(0, Ordering::Relaxed);
+    POPUPS_BLOCKED.store(0, Ordering::Relaxed);
+    NSFW_BLOCKED.store(0, Ordering::Relaxed);
+    MINERS_BLOCKED.store(0, Ordering::Relaxed);
+    BYTES_SAVED.store(0, Ordering::Relaxed);
+    REQUESTS_TOTAL.store(0, Ordering::Relaxed);
 }
 
 /// Returns Some("ads"|"trackers"|"nsfw"|"miners"|"popups") if the navigation URL should be blocked.
@@ -53,36 +92,46 @@ pub fn should_block(url: &str, prefs: &BrowserPrefs) -> Option<&'static str> {
 
 /// Returns Some(reason) if a subresource URL should be blocked.
 pub fn should_block_resource(url: &str, prefs: &BrowserPrefs) -> Option<&'static str> {
-    let mut s = stats().lock().unwrap();
-    s.requests_total += 1;
+    REQUESTS_TOTAL.fetch_add(1, Ordering::Relaxed);
 
     let host = extract_host(url)?;
     let reason = check_host(&host, prefs)?;
 
     match reason {
-        "ads"      => { s.ads_blocked += 1; s.bytes_saved += 25_000; }
-        "trackers" => { s.trackers_blocked += 1; s.bytes_saved += 8_000; }
-        "nsfw"     => { s.nsfw_blocked += 1; }
-        "miners"   => { s.miners_blocked += 1; }
-        "popups"   => { s.popups_blocked += 1; }
+        "ads"      => { ADS_BLOCKED.fetch_add(1, Ordering::Relaxed); BYTES_SAVED.fetch_add(25_000, Ordering::Relaxed); }
+        "trackers" => { TRK_BLOCKED.fetch_add(1, Ordering::Relaxed); BYTES_SAVED.fetch_add(8_000, Ordering::Relaxed); }
+        "nsfw"     => { NSFW_BLOCKED.fetch_add(1, Ordering::Relaxed); }
+        "miners"   => { MINERS_BLOCKED.fetch_add(1, Ordering::Relaxed); }
+        "popups"   => { POPUPS_BLOCKED.fetch_add(1, Ordering::Relaxed); }
         _ => {}
     }
 
     Some(reason)
 }
 
-fn host_matches(host: &str, blocked: &str) -> bool {
-    host == blocked || host.ends_with(&format!(".{blocked}"))
+/// O(domain labels) lookup — walks host suffixes against the block set.
+fn is_blocked_host(host: &str, blocked: &HashSet<String>) -> bool {
+    if blocked.contains(host) {
+        return true;
+    }
+    let mut rest = host;
+    while let Some(dot) = rest.find('.') {
+        rest = &rest[dot + 1..];
+        if blocked.contains(rest) {
+            return true;
+        }
+    }
+    false
 }
 
 fn check_host(host: &str, prefs: &BrowserPrefs) -> Option<&'static str> {
     if prefs.block_ads {
-        if AD_HOSTS.get().map(|h| h.iter().any(|b| host_matches(host, b))).unwrap_or(false) {
+        if AD_HOSTS.get().map(|h| is_blocked_host(host, h)).unwrap_or(false) {
             return Some("ads");
         }
     }
     if prefs.block_trackers {
-        if TR_HOSTS.get().map(|h| h.iter().any(|b| host_matches(host, b))).unwrap_or(false) {
+        if TR_HOSTS.get().map(|h| is_blocked_host(host, h)).unwrap_or(false) {
             return Some("trackers");
         }
     }

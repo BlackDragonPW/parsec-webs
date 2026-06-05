@@ -7,7 +7,7 @@
 
 use std::sync::{Arc, OnceLock};
 use std::collections::HashMap;
-use tokio::sync::Mutex;
+use std::sync::Mutex;
 use tokio::io::AsyncWriteExt;
 use futures_util::StreamExt;
 use reqwest::{Client, header};
@@ -255,7 +255,7 @@ pub async fn download_file(
 
     // Update size + mime
     {
-        let mut map = state.lock().await;
+        let mut map = state.lock().unwrap();
         if let Some(d) = map.get_mut(id) {
             d.size = total;
             if let Some(ct) = response.headers().get(header::CONTENT_TYPE) {
@@ -292,7 +292,7 @@ pub async fn download_file(
             let progress = if total > 0 { downloaded as f32 / total as f32 * 100.0 } else { 0.0 };
 
             {
-                let mut map = state.lock().await;
+                let mut map = state.lock().unwrap();
                 if let Some(d) = map.get_mut(&id_s) {
                     d.downloaded = downloaded;
                     d.progress   = progress;

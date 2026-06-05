@@ -53,6 +53,12 @@ object ParsecCore {
      */
     external fun shouldBlockResource(tabId: String, url: String, resourceType: String): String
 
+    /** Load ad/tracker host lists once at startup. */
+    external fun getBlockLists(): String
+
+    /** Record a block event for stats (called only when a resource is actually blocked). */
+    external fun recordBlock(reason: String)
+
     // ── Tab lifecycle ─────────────────────────────────────────────────────────
 
     /** Notify Rust when a WebView's URL/title/nav state changes. */

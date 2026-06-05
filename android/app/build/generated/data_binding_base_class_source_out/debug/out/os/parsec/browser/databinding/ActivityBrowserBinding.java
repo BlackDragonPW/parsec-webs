@@ -13,7 +13,6 @@ import android.widget.LinearLayout;
 import android.widget.ProgressBar;
 import androidx.annotation.NonNull;
 import androidx.annotation.Nullable;
-import androidx.coordinatorlayout.widget.CoordinatorLayout;
 import androidx.recyclerview.widget.RecyclerView;
 import androidx.viewbinding.ViewBinding;
 import androidx.viewbinding.ViewBindings;
@@ -24,7 +23,7 @@ import os.parsec.browser.R;
 
 public final class ActivityBrowserBinding implements ViewBinding {
   @NonNull
-  private final CoordinatorLayout rootView;
+  private final LinearLayout rootView;
 
   @NonNull
   public final LinearLayout bottomSheet;
@@ -54,6 +53,9 @@ public final class ActivityBrowserBinding implements ViewBinding {
   public final ProgressBar progressBar;
 
   @NonNull
+  public final LinearLayout rootCoordinator;
+
+  @NonNull
   public final RecyclerView suggestionsList;
 
   @NonNull
@@ -65,13 +67,16 @@ public final class ActivityBrowserBinding implements ViewBinding {
   @NonNull
   public final FrameLayout webviewContainer;
 
-  private ActivityBrowserBinding(@NonNull CoordinatorLayout rootView,
-      @NonNull LinearLayout bottomSheet, @NonNull ImageButton btnBack,
-      @NonNull ImageButton btnForward, @NonNull ImageButton btnMenu, @NonNull ImageButton btnNewTab,
-      @NonNull ImageButton btnReload, @NonNull Button btnTabs, @NonNull ImageView lockIcon,
-      @NonNull ProgressBar progressBar, @NonNull RecyclerView suggestionsList,
+  @NonNull
+  public final FrameLayout webviewStack;
+
+  private ActivityBrowserBinding(@NonNull LinearLayout rootView, @NonNull LinearLayout bottomSheet,
+      @NonNull ImageButton btnBack, @NonNull ImageButton btnForward, @NonNull ImageButton btnMenu,
+      @NonNull ImageButton btnNewTab, @NonNull ImageButton btnReload, @NonNull Button btnTabs,
+      @NonNull ImageView lockIcon, @NonNull ProgressBar progressBar,
+      @NonNull LinearLayout rootCoordinator, @NonNull RecyclerView suggestionsList,
       @NonNull LinearLayout toolbarLayout, @NonNull EditText urlBar,
-      @NonNull FrameLayout webviewContainer) {
+      @NonNull FrameLayout webviewContainer, @NonNull FrameLayout webviewStack) {
     this.rootView = rootView;
     this.bottomSheet = bottomSheet;
     this.btnBack = btnBack;
@@ -82,15 +87,17 @@ public final class ActivityBrowserBinding implements ViewBinding {
     this.btnTabs = btnTabs;
     this.lockIcon = lockIcon;
     this.progressBar = progressBar;
+    this.rootCoordinator = rootCoordinator;
     this.suggestionsList = suggestionsList;
     this.toolbarLayout = toolbarLayout;
     this.urlBar = urlBar;
     this.webviewContainer = webviewContainer;
+    this.webviewStack = webviewStack;
   }
 
   @Override
   @NonNull
-  public CoordinatorLayout getRoot() {
+  public LinearLayout getRoot() {
     return rootView;
   }
 
@@ -169,6 +176,8 @@ public final class ActivityBrowserBinding implements ViewBinding {
         break missingId;
       }
 
+      LinearLayout rootCoordinator = (LinearLayout) rootView;
+
       id = R.id.suggestions_list;
       RecyclerView suggestionsList = ViewBindings.findChildViewById(rootView, id);
       if (suggestionsList == null) {
@@ -193,9 +202,15 @@ public final class ActivityBrowserBinding implements ViewBinding {
         break missingId;
       }
 
-      return new ActivityBrowserBinding((CoordinatorLayout) rootView, bottomSheet, btnBack,
-          btnForward, btnMenu, btnNewTab, btnReload, btnTabs, lockIcon, progressBar,
-          suggestionsList, toolbarLayout, urlBar, webviewContainer);
+      id = R.id.webview_stack;
+      FrameLayout webviewStack = ViewBindings.findChildViewById(rootView, id);
+      if (webviewStack == null) {
+        break missingId;
+      }
+
+      return new ActivityBrowserBinding((LinearLayout) rootView, bottomSheet, btnBack, btnForward,
+          btnMenu, btnNewTab, btnReload, btnTabs, lockIcon, progressBar, rootCoordinator,
+          suggestionsList, toolbarLayout, urlBar, webviewContainer, webviewStack);
     }
     String missingId = rootView.getResources().getResourceName(id);
     throw new NullPointerException("Missing required view with ID: ".concat(missingId));

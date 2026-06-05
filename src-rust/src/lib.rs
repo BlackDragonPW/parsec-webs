@@ -192,13 +192,12 @@ pub extern "system" fn Java_os_parsec_browser_ParsecCore_init(
     _class: JClass,
     data_dir_j: JString,
 ) {
-    // Init logging → Android logcat
-    // Init logging → Android logcat (tracing-android 0.2 uses layer(), not init())
+    // Init logging → Android logcat (best-effort — must not crash startup)
     {
         use tracing_subscriber::prelude::*;
-        let _ = tracing_subscriber::registry()
-            .with(tracing_android::layer("ParsecCore").unwrap())
-            .init();
+        if let Ok(android_layer) = tracing_android::layer("ParsecCore") {
+            let _ = tracing_subscriber::registry().with(android_layer).try_init();
+        }
     }
 
     let data_dir: String = env.get_string(&data_dir_j)
@@ -360,7 +359,28 @@ pub extern "system" fn Java_os_parsec_browser_ParsecCore_shouldBlockResource<'lo
     env.new_string(resp.to_string()).unwrap().into_raw()
 }
 
-/// Tab lifecycle: notify Rust when a tab's URL/title changes.
+/// Export ad/tracker host lists as JSON for Kotlin-side blocking (no JNI per request).
+#[no_mangle]
+pub extern "system" fn Java_os_parsec_browser_ParsecCore_getBlockLists<'local>(
+    env: JNIEnv<'local>,
+    _class: JClass<'local>,
+) -> jstring {
+    let json = blocker::block_lists_json();
+    env.new_string(json).unwrap().into_raw()
+}
+
+/// Record a block from Kotlin hot-path (stats only).
+#[no_mangle]
+pub extern "system" fn Java_os_parsec_browser_ParsecCore_recordBlock<'local>(
+    mut env: JNIEnv<'local>,
+    _class: JClass<'local>,
+    reason_j: JString<'local>,
+) {
+    let reason: String = env.get_string(&reason_j).map(|s| s.into()).unwrap_or_default();
+    blocker::record_block(&reason);
+}
+
+/// Called by Kotlin when a WebView's URL/title/nav state changes.
 #[no_mangle]
 pub extern "system" fn Java_os_parsec_browser_ParsecCore_onTabUpdated<'local>(
     mut env: JNIEnv<'local>,

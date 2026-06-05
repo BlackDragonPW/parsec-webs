@@ -1,86 +1,90 @@
 [
     {
-        "merged": "os.parsec.browser.app-debug-50:/mipmap-hdpi_ic_launcher.xml.flat",
-        "source": "os.parsec.browser.app-main-52:/mipmap-hdpi/ic_launcher.xml"
+        "merged": "C:\\Users\\divyaamshu\\.gradle\\daemon\\8.6\\os.parsec.browser.app-debug-50:\\drawable_ic_add.xml.flat",
+        "source": "C:\\Users\\divyaamshu\\.gradle\\daemon\\8.6\\os.parsec.browser.app-main-52:\\drawable\\ic_add.xml"
     },
     {
-        "merged": "os.parsec.browser.app-debug-50:/xml_data_extraction_rules.xml.flat",
-        "source": "os.parsec.browser.app-main-52:/xml/data_extraction_rules.xml"
+        "merged": "C:\\Users\\divyaamshu\\.gradle\\daemon\\8.6\\os.parsec.browser.app-debug-50:\\drawable_ic_reload.xml.flat",
+        "source": "C:\\Users\\divyaamshu\\.gradle\\daemon\\8.6\\os.parsec.browser.app-main-52:\\drawable\\ic_reload.xml"
     },
     {
-        "merged": "os.parsec.browser.app-debug-50:/drawable_ic_menu.xml.flat",
-        "source": "os.parsec.browser.app-main-52:/drawable/ic_menu.xml"
+        "merged": "C:\\Users\\divyaamshu\\.gradle\\daemon\\8.6\\os.parsec.browser.app-debug-50:\\mipmap-hdpi_ic_launcher_round.xml.flat",
+        "source": "C:\\Users\\divyaamshu\\.gradle\\daemon\\8.6\\os.parsec.browser.app-main-52:\\mipmap-hdpi\\ic_launcher_round.xml"
     },
     {
-        "merged": "os.parsec.browser.app-debug-50:/mipmap-mdpi_ic_launcher_round.xml.flat",
-        "source": "os.parsec.browser.app-main-52:/mipmap-mdpi/ic_launcher_round.xml"
+        "merged": "C:\\Users\\divyaamshu\\.gradle\\daemon\\8.6\\os.parsec.browser.app-debug-50:\\drawable_url_bar_bg.xml.flat",
+        "source": "C:\\Users\\divyaamshu\\.gradle\\daemon\\8.6\\os.parsec.browser.app-main-52:\\drawable\\url_bar_bg.xml"
     },
     {
-        "merged": "os.parsec.browser.app-debug-50:/drawable_ic_launcher_foreground.xml.flat",
-        "source": "os.parsec.browser.app-main-52:/drawable/ic_launcher_foreground.xml"
+        "merged": "C:\\Users\\divyaamshu\\.gradle\\daemon\\8.6\\os.parsec.browser.app-debug-50:\\mipmap-xhdpi_ic_launcher_round.xml.flat",
+        "source": "C:\\Users\\divyaamshu\\.gradle\\daemon\\8.6\\os.parsec.browser.app-main-52:\\mipmap-xhdpi\\ic_launcher_round.xml"
     },
     {
-        "merged": "os.parsec.browser.app-debug-50:/mipmap-xxhdpi_ic_launcher_round.xml.flat",
-        "source": "os.parsec.browser.app-main-52:/mipmap-xxhdpi/ic_launcher_round.xml"
-    },
-    {
-        "merged": "os.parsec.browser.app-debug-50:/mipmap-xxxhdpi_ic_launcher_round.xml.flat",
-        "source": "os.parsec.browser.app-main-52:/mipmap-xxxhdpi/ic_launcher_round.xml"
-    },
-    {
-        "merged": "os.parsec.browser.app-debug-50:/mipmap-hdpi_ic_launcher_round.xml.flat",
-        "source": "os.parsec.browser.app-main-52:/mipmap-hdpi/ic_launcher_round.xml"
-    },
-    {
-        "merged": "os.parsec.browser.app-debug-50:/drawable_ic_reload.xml.flat",
-        "source": "os.parsec.browser.app-main-52:/drawable/ic_reload.xml"
-    },
-    {
-        "merged": "os.parsec.browser.app-debug-50:/mipmap-xhdpi_ic_launcher_round.xml.flat",
-        "source": "os.parsec.browser.app-main-52:/mipmap-xhdpi/ic_launcher_round.xml"
+        "merged": "C:\\Users\\divyaamshu\\.gradle\\daemon\\8.6\\os.parsec.browser.app-debug-50:\\drawable_ic_back.xml.flat",
+        "source": "C:\\Users\\divyaamshu\\.gradle\\daemon\\8.6\\os.parsec.browser.app-main-52:\\drawable\\ic_back.xml"
     },
     {
         "merged": "os.parsec.browser.app-debug-50:/layout_activity_browser.xml.flat",
         "source": "os.parsec.browser.app-main-52:/layout/activity_browser.xml"
     },
     {
-        "merged": "os.parsec.browser.app-debug-50:/drawable_url_bar_bg.xml.flat",
-        "source": "os.parsec.browser.app-main-52:/drawable/url_bar_bg.xml"
+        "merged": "C:\\Users\\divyaamshu\\.gradle\\daemon\\8.6\\os.parsec.browser.app-debug-50:\\mipmap-mdpi_ic_launcher.xml.flat",
+        "source": "C:\\Users\\divyaamshu\\.gradle\\daemon\\8.6\\os.parsec.browser.app-main-52:\\mipmap-mdpi\\ic_launcher.xml"
     },
     {
-        "merged": "os.parsec.browser.app-debug-50:/mipmap-xxhdpi_ic_launcher.xml.flat",
-        "source": "os.parsec.browser.app-main-52:/mipmap-xxhdpi/ic_launcher.xml"
+        "merged": "C:\\Users\\divyaamshu\\.gradle\\daemon\\8.6\\os.parsec.browser.app-debug-50:\\mipmap-mdpi_ic_launcher_round.xml.flat",
+        "source": "C:\\Users\\divyaamshu\\.gradle\\daemon\\8.6\\os.parsec.browser.app-main-52:\\mipmap-mdpi\\ic_launcher_round.xml"
     },
     {
-        "merged": "os.parsec.browser.app-debug-50:/drawable_ic_back.xml.flat",
-        "source": "os.parsec.browser.app-main-52:/drawable/ic_back.xml"
+        "merged": "C:\\Users\\divyaamshu\\.gradle\\daemon\\8.6\\os.parsec.browser.app-debug-50:\\drawable_ic_launcher_foreground.xml.flat",
+        "source": "C:\\Users\\divyaamshu\\.gradle\\daemon\\8.6\\os.parsec.browser.app-main-52:\\drawable\\ic_launcher_foreground.xml"
     },
     {
-        "merged": "os.parsec.browser.app-debug-50:/drawable_ic_add.xml.flat",
-        "source": "os.parsec.browser.app-main-52:/drawable/ic_add.xml"
+        "merged": "C:\\Users\\divyaamshu\\.gradle\\daemon\\8.6\\os.parsec.browser.app-debug-50:\\mipmap-xxxhdpi_ic_launcher_round.xml.flat",
+        "source": "C:\\Users\\divyaamshu\\.gradle\\daemon\\8.6\\os.parsec.browser.app-main-52:\\mipmap-xxxhdpi\\ic_launcher_round.xml"
     },
     {
-        "merged": "os.parsec.browser.app-debug-50:/drawable_ic_forward.xml.flat",
-        "source": "os.parsec.browser.app-main-52:/drawable/ic_forward.xml"
+        "merged": "C:\\Users\\divyaamshu\\.gradle\\daemon\\8.6\\os.parsec.browser.app-debug-50:\\drawable_ic_forward.xml.flat",
+        "source": "C:\\Users\\divyaamshu\\.gradle\\daemon\\8.6\\os.parsec.browser.app-main-52:\\drawable\\ic_forward.xml"
     },
     {
-        "merged": "os.parsec.browser.app-debug-50:/mipmap-xxxhdpi_ic_launcher.xml.flat",
-        "source": "os.parsec.browser.app-main-52:/mipmap-xxxhdpi/ic_launcher.xml"
+        "merged": "C:\\Users\\divyaamshu\\.gradle\\daemon\\8.6\\os.parsec.browser.app-debug-50:\\mipmap-xxhdpi_ic_launcher_round.xml.flat",
+        "source": "C:\\Users\\divyaamshu\\.gradle\\daemon\\8.6\\os.parsec.browser.app-main-52:\\mipmap-xxhdpi\\ic_launcher_round.xml"
     },
     {
-        "merged": "os.parsec.browser.app-debug-50:/drawable_tab_count_bg.xml.flat",
-        "source": "os.parsec.browser.app-main-52:/drawable/tab_count_bg.xml"
+        "merged": "C:\\Users\\divyaamshu\\.gradle\\daemon\\8.6\\os.parsec.browser.app-debug-50:\\xml_backup_rules.xml.flat",
+        "source": "C:\\Users\\divyaamshu\\.gradle\\daemon\\8.6\\os.parsec.browser.app-main-52:\\xml\\backup_rules.xml"
     },
     {
-        "merged": "os.parsec.browser.app-debug-50:/xml_backup_rules.xml.flat",
-        "source": "os.parsec.browser.app-main-52:/xml/backup_rules.xml"
+        "merged": "C:\\Users\\divyaamshu\\.gradle\\daemon\\8.6\\os.parsec.browser.app-debug-50:\\mipmap-xhdpi_ic_launcher.xml.flat",
+        "source": "C:\\Users\\divyaamshu\\.gradle\\daemon\\8.6\\os.parsec.browser.app-main-52:\\mipmap-xhdpi\\ic_launcher.xml"
     },
     {
-        "merged": "os.parsec.browser.app-debug-50:/mipmap-xhdpi_ic_launcher.xml.flat",
-        "source": "os.parsec.browser.app-main-52:/mipmap-xhdpi/ic_launcher.xml"
+        "merged": "C:\\Users\\divyaamshu\\.gradle\\daemon\\8.6\\os.parsec.browser.app-debug-50:\\drawable_ic_menu.xml.flat",
+        "source": "C:\\Users\\divyaamshu\\.gradle\\daemon\\8.6\\os.parsec.browser.app-main-52:\\drawable\\ic_menu.xml"
     },
     {
-        "merged": "os.parsec.browser.app-debug-50:/mipmap-mdpi_ic_launcher.xml.flat",
-        "source": "os.parsec.browser.app-main-52:/mipmap-mdpi/ic_launcher.xml"
+        "merged": "C:\\Users\\divyaamshu\\.gradle\\daemon\\8.6\\os.parsec.browser.app-debug-50:\\mipmap-xxhdpi_ic_launcher.xml.flat",
+        "source": "C:\\Users\\divyaamshu\\.gradle\\daemon\\8.6\\os.parsec.browser.app-main-52:\\mipmap-xxhdpi\\ic_launcher.xml"
+    },
+    {
+        "merged": "C:\\Users\\divyaamshu\\.gradle\\daemon\\8.6\\os.parsec.browser.app-debug-50:\\drawable_tab_count_bg.xml.flat",
+        "source": "C:\\Users\\divyaamshu\\.gradle\\daemon\\8.6\\os.parsec.browser.app-main-52:\\drawable\\tab_count_bg.xml"
+    },
+    {
+        "merged": "C:\\Users\\divyaamshu\\.gradle\\daemon\\8.6\\os.parsec.browser.app-debug-50:\\mipmap-hdpi_ic_launcher.xml.flat",
+        "source": "C:\\Users\\divyaamshu\\.gradle\\daemon\\8.6\\os.parsec.browser.app-main-52:\\mipmap-hdpi\\ic_launcher.xml"
+    },
+    {
+        "merged": "C:\\Users\\divyaamshu\\.gradle\\daemon\\8.6\\os.parsec.browser.app-debug-50:\\xml_data_extraction_rules.xml.flat",
+        "source": "C:\\Users\\divyaamshu\\.gradle\\daemon\\8.6\\os.parsec.browser.app-main-52:\\xml\\data_extraction_rules.xml"
+    },
+    {
+        "merged": "C:\\Users\\divyaamshu\\.gradle\\daemon\\8.6\\os.parsec.browser.app-debug-50:\\layout_activity_browser.xml.flat",
+        "source": "C:\\Users\\divyaamshu\\.gradle\\daemon\\8.6\\os.parsec.browser.app-main-52:\\layout\\activity_browser.xml"
+    },
+    {
+        "merged": "C:\\Users\\divyaamshu\\.gradle\\daemon\\8.6\\os.parsec.browser.app-debug-50:\\mipmap-xxxhdpi_ic_launcher.xml.flat",
+        "source": "C:\\Users\\divyaamshu\\.gradle\\daemon\\8.6\\os.parsec.browser.app-main-52:\\mipmap-xxxhdpi\\ic_launcher.xml"
     }
 ]

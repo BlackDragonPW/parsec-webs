@@ -13,6 +13,18 @@
 mod blocker;
 mod network;
 mod tab_manager;
+#[allow(
+    unused_variables,
+    dead_code,
+    unused_imports,
+    unused_mut,
+    unreachable_patterns,
+    non_camel_case_types,
+    unused_parens,
+    unreachable_code,
+    unused_assignments
+)]
+mod neutron_bridge;
 mod neutron;
 mod extension_store;
 mod extension_runtime;
@@ -229,7 +241,7 @@ fn handle_ipc(msg_id: &str, cmd: IpcCmd, state: &Arc<AppState>) -> String {
             injections.push(state.ext_rt.build_chrome_compat_script("", &tab_id));
             for ext in installed { if ext.enabled { if let Some(script) = extension_store::CrxInstaller::build_injection_script(ext, &final_url) { injections.push(script); } } }
             drop(ext_store);
-            let tabs = state.tabs.lock().unwrap();
+            let mut tabs = state.tabs.lock().unwrap();
             for script in injections { tabs.inject_script(&tab_id, &script); }
             state.ext_rt.on_navigation(NavigationEvent { tab_id: tab_id.clone(), url: final_url.clone(), frame_id: 0, parent_frame_id: -1, process_id: 1, timestamp: unix_ms() as f64, transition_type: "typed".into() });
             state.profile.lock().unwrap().add_history(&final_url, &final_url, "🌐");
@@ -297,8 +309,17 @@ fn handle_ipc(msg_id: &str, cmd: IpcCmd, state: &Arc<AppState>) -> String {
         IpcCmd::CwsSearch { query, page } => { let r = state.rt.block_on(state.exts.lock().unwrap().search_store(&query, page.unwrap_or(0))); match r { Ok(r) => ipc_ok(msg_id, serde_json::to_value(r).unwrap()), Err(e) => ipc_err(msg_id, &e.to_string()) } }
         IpcCmd::CwsFeatured { category } => { let r = state.rt.block_on(state.exts.lock().unwrap().featured(&category)); match r { Ok(r) => ipc_ok(msg_id, serde_json::to_value(r).unwrap()), Err(e) => ipc_err(msg_id, &e.to_string()) } }
         IpcCmd::CwsInstall { ext_id } => {
-            let exts = state.exts.clone(); let rt = state.rt.clone(); let bg = state.bg_workers.clone(); let id2 = ext_id.clone();
-            rt.spawn(async move { if let Ok(ext) = exts.lock().unwrap().install_from_store(&id2, |_| {}).await { bg.spawn_for_extension(&ext); } });
+            let exts = state.exts.clone();
+            let rt = state.rt.clone();
+            let bg = state.bg_workers.clone();
+            let id2 = ext_id.clone();
+            std::thread::spawn(move || {
+                if let Ok(ext) = rt.block_on(
+                    exts.lock().unwrap().install_from_store(&id2, |_| {})
+                ) {
+                    bg.spawn_for_extension(&ext);
+                }
+            });
             ipc_ok(msg_id, serde_json::json!({ "installing": true }))
         }
         IpcCmd::CwsUninstall { ext_id } => { state.bg_workers.remove(&ext_id); let r = state.exts.lock().unwrap().uninstall(&ext_id); match r { Ok(_) => ipc_ok(msg_id, serde_json::json!({})), Err(e) => ipc_err(msg_id, &e.to_string()) } }
@@ -535,7 +556,7 @@ fn main() {
     // Previously the event loop was created after AppState, meaning proxy could
     // not be stored in AppState (used after creation) and could not be passed to
     // ExtensionRuntime. Both caused compile errors / runtime panics.
-    let event_loop = EventLoopBuilder::<AppEvent>::new().build();
+    let event_loop = EventLoopBuilder::with_user_event().build();
     let proxy      = event_loop.create_proxy();
 
     // ExtensionRuntime gets proxy so chrome.tabs.create() fires real CreateTab events
@@ -591,10 +612,15 @@ fn main() {
     let chrome_wv = WebViewBuilder::new(&window)
         .with_url(if cfg!(debug_assertions) { "http://localhost:1421" } else { "parsec-app://localhost" })
         .with_transparent(true)
-        .with_custom_protocol("parsec-app".into(), |_req| { let body = include_bytes!("../../dist/index.html"); wry::http::Response::builder().header("Content-Type","text/html").body(body.to_vec()).unwrap() })
-        .with_ipc_handler(move |msg: wry::http::Request<String>| {
-            let body = msg.body();
-            let parsed: serde_json::Value = match serde_json::from_str(body) { Ok(v) => v, Err(e) => { warn!("IPC: {e}"); return; } };
+        .with_custom_protocol("parsec-app".into(), |_req| {
+            let body = include_bytes!("../../dist/index.html");
+            wry::http::Response::builder()
+                .header("Content-Type", "text/html")
+                .body(std::borrow::Cow::from(body.as_ref()))
+                .unwrap()
+        })
+        .with_ipc_handler(move |body: String| {
+            let parsed: serde_json::Value = match serde_json::from_str(&body) { Ok(v) => v, Err(e) => { warn!("IPC: {e}"); return; } };
             let msg_id  = parsed["id"].as_str().unwrap_or("0").to_string();
             let cmd_val = serde_json::json!({ "cmd": parsed["cmd"], "args": parsed.get("args").cloned().unwrap_or(serde_json::json!({})) });
             let cmd: IpcCmd = match serde_json::from_value(cmd_val) { Ok(c) => c, Err(e) => { warn!("IPC cmd: {e}"); return; } };

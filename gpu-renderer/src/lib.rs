@@ -29,10 +29,7 @@
 //!   wgpu swap-chain → GPU → screen  (Metal/Vulkan/DX12)
 
 use std::collections::{HashMap, HashSet};
-use std::sync::{
-    Arc,
-    mpsc::{self, Receiver, SyncSender},
-};
+use std::sync::mpsc::{self, Receiver, SyncSender};
 use std::thread;
 use std::time::{Duration, Instant};
 
@@ -73,7 +70,7 @@ pub struct GlyphLine {
 }
 
 /// A complete frame — all visible lines for one render tick.
-#[derive(Debug, Clone, Default)]
+#[derive(Debug, Clone, Default, serde::Deserialize)]
 pub struct GlyphFrame {
     pub lines: Vec<GlyphLine>,
     /// Editor canvas top-left in logical pixels (Tauri sends this).
@@ -100,6 +97,15 @@ pub enum RenderCmd {
 }
 
 // ── GpuRenderer ───────────────────────────────────────────────────────────────
+
+/// Raw window handles moved onto the render thread.
+/// SAFETY: Tauri keeps the OS window alive for the lifetime of the renderer.
+struct SendRawHandles {
+    window: raw_window_handle::RawWindowHandle,
+    display: raw_window_handle::RawDisplayHandle,
+}
+
+unsafe impl Send for SendRawHandles {}
 
 /// Handle to the GPU render thread.
 /// Create with [`GpuRenderer::spawn`], then feed frames via [`GpuRenderer::push_frame`].
@@ -133,12 +139,17 @@ impl GpuRenderer {
         // The render thread owns everything GPU-related.
         // Spawning as a regular OS thread (not Tokio) keeps the GPU work off
         // the async executor and avoids executor blocking.
+        let handles = SendRawHandles {
+            window: window_handle,
+            display: display_handle,
+        };
+
         thread::Builder::new()
             .name("parsec-gpu-render".into())
             .spawn(move || {
                 // Send our Thread handle back to the spawner immediately.
                 let _ = thread_tx.send(thread::current());
-                if let Err(e) = render_thread(window_handle, display_handle, width, height, font_bytes, rx) {
+                if let Err(e) = render_thread(handles, width, height, font_bytes, rx) {
                     error!("GPU render thread crashed: {e:#}");
                 }
             })
@@ -188,13 +199,15 @@ impl GpuRenderer {
 // ── Render thread ─────────────────────────────────────────────────────────────
 
 fn render_thread(
-    window_handle: raw_window_handle::RawWindowHandle,
-    display_handle: raw_window_handle::RawDisplayHandle,
+    handles: SendRawHandles,
     mut width: u32,
     mut height: u32,
     font_bytes: Vec<u8>,
     rx: Receiver<RenderCmd>,
 ) -> Result<()> {
+    let window_handle = handles.window;
+    let display_handle = handles.display;
+
     // ── wgpu initialisation ───────────────────────────────────────────────────
 
     // We use `pollster` to block on the async wgpu init from a sync thread.
@@ -437,7 +450,7 @@ fn render_thread(
             .collect();
 
         // Queue ALL sections in a single call — 1 lock acquisition, 1 batch.
-        brush.queue(&device, &queue, sections.into_iter()).unwrap_or_else(|e| {
+        brush.queue(&device, &queue, sections).unwrap_or_else(|e| {
             warn!("brush queue error: {e}");
         });
 
@@ -494,11 +507,12 @@ fn build_section(line: &GlyphLine, frame: &GlyphFrame) -> OwnedSection {
         })
         .collect();
 
-    OwnedSection::default()
-        .with_screen_position((frame.canvas_x, frame.canvas_y + line.y_px * frame.scale))
-        .with_bounds((frame.canvas_w * frame.scale, frame.canvas_h * frame.scale))
-        .with_layout(Layout::default_single_line())
-        .with_text(texts)
+    OwnedSection {
+        screen_position: (frame.canvas_x, frame.canvas_y + line.y_px * frame.scale),
+        bounds: (frame.canvas_w * frame.scale, frame.canvas_h * frame.scale),
+        layout: Layout::default(),
+        text: texts,
+    }
 }
 
 /// Unpack 0xRRGGBBAA into [f32; 4].

@@ -1,3 +1,10 @@
+# ── Nested workspace — keeps the desktop Tauri crate independent
+# from the root Android workspace (which has its own gpu-renderer).
+# This prevents the "two packages named parsec-gpu-renderer" conflict.
+[workspace]
+members  = ["."]
+resolver = "2"
+
 [package]
 name    = "parsec-web"
 version = "1.1.0"
@@ -10,26 +17,18 @@ path = "src/main.rs"
 
 [dependencies]
 # ── Windowing + per-tab native WebViews ──────────────────────────
-wry = { version = "0.37", features = ["protocol-handler"] }
+wry = { version = "0.37" }
 tao = { version = "0.26", features = ["rwh_06"] }
 
 # ── Neutron GPU renderer ─────────────────────────────────────────
 # The full production Neutron pipeline: SceneBuffer chrome layer +
 # GlyphFrame tab viewport layer, both composited via wgpu.
 parsec-gpu-renderer = { path = "../gpu-renderer" }
-wgpu_text           = "0.9"
-
-# ── macOS: Direct Metal path ─────────────────────────────────────
-# Bypasses wgpu for Safari-parity rendering performance.
-# Only compiled on macOS targets.
-[target.'cfg(target_os = "macos")'.dependencies]
-metal   = "0.27"         # Metal framework bindings
-objc2   = "0.5"          # Objective-C runtime (for NSView attachment)
-core-graphics = "0.23"   # CGSize for CAMetalLayer drawable size
+wgpu_text           = "=0.8.7"
 
 # ── HTTP/3 + QUIC ─────────────────────────────────────────────────
 reqwest = { version = "0.12", default-features = false, features = [
-    "http3", "rustls-tls", "gzip", "brotli", "deflate", "stream", "json",
+    "rustls-tls", "http2", "gzip", "brotli", "deflate", "stream", "json",
 ] }
 
 # ── CDP WebSocket client ──────────────────────────────────────────
@@ -52,7 +51,7 @@ ab_glyph          = "0.2"
 raw-window-handle = "0.6"
 
 # ── CRX / Extension store ─────────────────────────────────────────
-zip  = { version = "0.6", default-features = false, features = ["deflate", "stored"] }
+zip  = { version = "0.6", default-features = false, features = ["deflate"] }
 sha2 = "0.10"
 
 # ── Serialisation ─────────────────────────────────────────────────
@@ -82,6 +81,14 @@ getrandom        = { version = "0.2", features = ["std"] }
 # ── Logging ───────────────────────────────────────────────────────
 tracing            = "0.1"
 tracing-subscriber = { version = "0.3", features = ["env-filter"] }
+
+# ── macOS: Direct Metal path ─────────────────────────────────────
+# Bypasses wgpu for Safari-parity rendering performance.
+# Only compiled on macOS targets.
+[target.'cfg(target_os = "macos")'.dependencies]
+metal         = "0.27"
+objc2         = "0.5"
+core-graphics = "0.23"
 
 [build-dependencies]
 # Checks if forked WebKit is available; emits link flags if so

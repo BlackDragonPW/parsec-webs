@@ -17,14 +17,24 @@
 //   WebKit patch 0011 hands that texture to Neutron which composites it
 //   behind the chrome layer in one render pass, eliminating the double-composite.
 
-// Include the full Neutron wgpu pipeline (SceneBuffer + glyph atlas + WGSL shaders)
-include!("../../../../gpui/renderer/neutron_bridge.rs");
-
+use crate::neutron_bridge::{
+    load_font_bytes, spawn_render_thread, SceneView, ATLAS, RTHREAD, SCENE,
+};
 use std::sync::{Arc, Mutex, OnceLock};
 use anyhow::Result;
+use raw_window_handle::{HasDisplayHandle, HasWindowHandle};
 use tao::window::Window;
 use parsec_gpu_renderer::{GlyphFrame, GpuRenderer};
 use tracing::{info, warn};
+
+fn window_raw_handles(
+    window: &Window,
+) -> Result<(raw_window_handle::RawWindowHandle, raw_window_handle::RawDisplayHandle)> {
+    Ok((
+        window.window_handle()?.as_raw(),
+        window.display_handle()?.as_raw(),
+    ))
+}
 
 // Global GpuRenderer for DevTools high-fidelity text pipeline
 static GPU_RENDERER: OnceLock<Arc<GpuRenderer>> = OnceLock::new();
@@ -32,13 +42,10 @@ static GPU_RENDERER: OnceLock<Arc<GpuRenderer>> = OnceLock::new();
 // ── Surface init — tries Metal first (macOS), falls back to wgpu ─────────────
 
 pub fn init_surface(window: &Window) -> Result<()> {
-    use raw_window_handle::{HasRawDisplayHandle, HasRawWindowHandle};
-
     let size = window.inner_size();
     let w    = size.width;
     let h    = size.height;
-    let wh   = unsafe { window.raw_window_handle() };
-    let dh   = unsafe { window.raw_display_handle() };
+    let (wh, dh) = window_raw_handles(window)?;
 
     let font_bytes = load_font_bytes();
     if font_bytes.is_empty() {
@@ -71,7 +78,7 @@ pub fn init_surface(window: &Window) -> Result<()> {
     // ── wgpu path (Linux, Windows, macOS fallback) ───────────────────────────
     const SCENE_BYTES: usize = 16 + 16_384 * 64;
     let buf: &'static mut [u8] = Box::leak(vec![0u8; SCENE_BYTES].into_boxed_slice());
-    let arc = Arc::new(Mutex::new(SceneView { ptr: buf.as_ptr() }));
+    let arc = Arc::new(Mutex::new(SceneView::new(buf.as_ptr())));
     let _ = SCENE.set(arc.clone());
     let thread = spawn_render_thread(arc, wh, dh, w, h, font_bytes.clone());
     let _ = RTHREAD.set(thread);
@@ -83,12 +90,8 @@ pub fn init_surface(window: &Window) -> Result<()> {
 }
 
 fn init_gpu_renderer(window: &Window, w: u32, h: u32, font_bytes: Vec<u8>) -> Result<()> {
-    use raw_window_handle::{HasRawDisplayHandle, HasRawWindowHandle};
-    match GpuRenderer::spawn(
-        unsafe { window.raw_window_handle() },
-        unsafe { window.raw_display_handle() },
-        w, h, font_bytes,
-    ) {
+    let (wh, dh) = window_raw_handles(window)?;
+    match GpuRenderer::spawn(wh, dh, w, h, font_bytes) {
         Ok(r) => { let _ = GPU_RENDERER.set(Arc::new(r)); info!("Neutron Layer 2 (DevTools) ready"); }
         Err(e) => warn!("Neutron Layer 2 init failed (DOM fallback): {e:#}"),
     }
@@ -127,14 +130,14 @@ pub fn handle_neutron_ipc(cmd: &str, args: &serde_json::Value) -> serde_json::Va
             if ptr != 0 {
                 // Replace the zeroed boot buffer with the real JS-owned SAB.
                 // Safe: the SAB is kept alive by JS for the page lifetime.
-                let view = SceneView { ptr: ptr as *const u8 };
+                let view = SceneView::new(ptr as *const u8);
                 let arc  = Arc::new(Mutex::new(view));
                 // OnceLock is already set — we update the underlying scene
                 // pointer by waking the render thread which re-reads SCENE.
                 // (In practice neutron_bridge's SCENE is set once; for SAB
                 //  pointer updates the render loop uses the Arc's latest value.)
                 if let Some(existing) = SCENE.get() {
-                    *existing.lock().unwrap() = SceneView { ptr: ptr as *const u8 };
+                    *existing.lock().unwrap() = SceneView::new(ptr as *const u8);
                 } else {
                     let _ = SCENE.set(arc);
                 }
@@ -225,16 +228,19 @@ pub fn composite_tab_dmabuf(tab_id: &str, fd: i32, x: f32, y: f32, w: f32, h: f3
 // the WebKit C FFI (ParsecNeutronBridge.cpp). After this, every composited
 // WebKit frame calls our function pointer instead of the OS compositor.
 
-extern "C" {
-    // Defined in ParsecNeutronBridge.cpp (WebKit patch 0011)
-    #[allow(dead_code)]
-    fn parsec_neutron_set_callback(
-        callback: Option<unsafe extern "C" fn(
-            tab_id: *const std::os::raw::c_char,
-            x: f32, y: f32, w: f32, h: f32, scale: f32,
-            surface_handle: usize,
-        )>
-    );
+type CompositorCallback = unsafe extern "C" fn(
+    tab_id: *const std::os::raw::c_char,
+    x: f32, y: f32, w: f32, h: f32, scale: f32,
+    surface_handle: usize,
+);
+
+static COMPOSITOR_CALLBACK: OnceLock<Option<CompositorCallback>> = OnceLock::new();
+
+/// Stub for ParsecNeutronBridge.cpp (WebKit patch 0011).
+/// When the patched WebKit is linked, its symbol takes precedence.
+#[no_mangle]
+pub extern "C" fn parsec_neutron_set_callback(callback: Option<CompositorCallback>) {
+    let _ = COMPOSITOR_CALLBACK.set(callback);
 }
 
 // The actual present callback — called from WebKit's compositor thread
@@ -258,8 +264,6 @@ unsafe extern "C" fn neutron_present_callback(
 /// Register the Rust compositor callback with the WebKit patch.
 /// Call this after init_surface() — requires the WebKit patch to be active.
 pub fn register_compositor_callback() {
-    unsafe {
-        parsec_neutron_set_callback(Some(neutron_present_callback));
-    }
-    info!("Neutron: WebKit compositor callback registered (single-pass compositing active)");
+    parsec_neutron_set_callback(Some(neutron_present_callback));
+    info!("Neutron: compositor callback registered");
 }

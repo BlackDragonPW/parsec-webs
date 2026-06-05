@@ -1,60 +1,23 @@
 <?xml version="1.0" encoding="utf-8"?>
-<androidx.coordinatorlayout.widget.CoordinatorLayout
+<!-- Vertical stack: toolbar does NOT overlay WebView (overlay was blocking YouTube search taps) -->
+<LinearLayout
     xmlns:android="http://schemas.android.com/apk/res/android"
     xmlns:app="http://schemas.android.com/apk/res-auto"
+    android:id="@+id/root_coordinator"
     android:layout_width="match_parent"
     android:layout_height="match_parent"
-    android:background="@color/background">
+    android:background="@color/background"
+    android:orientation="vertical">
 
-    <!-- ── WebView container (behind chrome) ──────────────────────────── -->
-    <FrameLayout
-        android:id="@+id/webview_container"
-        android:layout_width="match_parent"
-        android:layout_height="match_parent" />
-
-    <!-- ── Suggestion overlay ─────────────────────────────────────────── -->
-    <androidx.recyclerview.widget.RecyclerView
-        android:id="@+id/suggestions_list"
-        android:layout_width="match_parent"
-        android:layout_height="wrap_content"
-        android:layout_gravity="top"
-        android:background="@color/surface"
-        android:elevation="8dp"
-        android:visibility="gone" />
-
-    <!-- ── Bottom sheet (panels, not the toolbar) ─────────────────────── -->
-    <LinearLayout
-        android:id="@+id/bottom_sheet"
-        android:layout_width="match_parent"
-        android:layout_height="wrap_content"
-        android:layout_gravity="bottom"
-        android:background="@color/surface"
-        android:elevation="8dp"
-        android:orientation="vertical"
-        android:visibility="gone" />
-
-    <!-- ── Browser chrome: progress + toolbar ─────────────────────────── -->
+    <!-- ── Browser chrome (top, Chrome-style) ─────────────────────────── -->
     <LinearLayout
         android:id="@+id/toolbar_layout"
         android:layout_width="match_parent"
         android:layout_height="wrap_content"
-        android:layout_gravity="bottom"
         android:background="@color/toolbar_bg"
         android:elevation="4dp"
         android:orientation="vertical">
 
-        <!-- Load progress bar (above toolbar) -->
-        <ProgressBar
-            android:id="@+id/progress_bar"
-            style="@android:style/Widget.ProgressBar.Horizontal"
-            android:layout_width="match_parent"
-            android:layout_height="3dp"
-            android:max="100"
-            android:progress="0"
-            android:visibility="gone"
-            android:progressTint="@color/accent" />
-
-        <!-- URL bar row -->
         <LinearLayout
             android:layout_width="match_parent"
             android:layout_height="56dp"
@@ -62,7 +25,6 @@
             android:orientation="horizontal"
             android:paddingHorizontal="4dp">
 
-            <!-- Back -->
             <ImageButton
                 android:id="@+id/btn_back"
                 android:layout_width="40dp"
@@ -72,7 +34,6 @@
                 android:src="@drawable/ic_back"
                 android:tint="@color/icon_tint" />
 
-            <!-- Forward -->
             <ImageButton
                 android:id="@+id/btn_forward"
                 android:layout_width="40dp"
@@ -82,7 +43,6 @@
                 android:src="@drawable/ic_forward"
                 android:tint="@color/icon_tint" />
 
-            <!-- Lock icon -->
             <ImageView
                 android:id="@+id/lock_icon"
                 android:layout_width="20dp"
@@ -91,7 +51,6 @@
                 android:src="@android:drawable/ic_secure"
                 android:contentDescription="Connection security" />
 
-            <!-- URL / search bar -->
             <EditText
                 android:id="@+id/url_bar"
                 android:layout_width="0dp"
@@ -100,8 +59,8 @@
                 android:layout_weight="1"
                 android:background="@drawable/url_bar_bg"
                 android:hint="Search or enter URL"
-                android:imeOptions="actionGo|flagNoExtractUi"
-                android:inputType="textUri"
+                android:imeOptions="actionSearch|flagNoExtractUi"
+                android:inputType="text"
                 android:maxLines="1"
                 android:paddingHorizontal="10dp"
                 android:singleLine="true"
@@ -109,7 +68,6 @@
                 android:textColorHint="@color/text_hint"
                 android:textSize="14sp" />
 
-            <!-- Reload / Stop -->
             <ImageButton
                 android:id="@+id/btn_reload"
                 android:layout_width="40dp"
@@ -119,7 +77,6 @@
                 android:src="@drawable/ic_reload"
                 android:tint="@color/icon_tint" />
 
-            <!-- Tab count -->
             <Button
                 android:id="@+id/btn_tabs"
                 android:layout_width="40dp"
@@ -130,7 +87,6 @@
                 android:textSize="12sp"
                 android:textStyle="bold" />
 
-            <!-- New tab -->
             <ImageButton
                 android:id="@+id/btn_new_tab"
                 android:layout_width="40dp"
@@ -140,7 +96,6 @@
                 android:src="@drawable/ic_add"
                 android:tint="@color/icon_tint" />
 
-            <!-- Menu -->
             <ImageButton
                 android:id="@+id/btn_menu"
                 android:layout_width="40dp"
@@ -151,6 +106,47 @@
                 android:tint="@color/icon_tint" />
 
         </LinearLayout>
+
+        <ProgressBar
+            android:id="@+id/progress_bar"
+            style="@android:style/Widget.ProgressBar.Horizontal"
+            android:layout_width="match_parent"
+            android:layout_height="3dp"
+            android:max="100"
+            android:progress="0"
+            android:visibility="gone"
+            android:progressTint="@color/accent" />
+
     </LinearLayout>
 
-</androidx.coordinatorlayout.widget.CoordinatorLayout>
+    <!-- ── WebView stack + suggestion overlay ─────────────────────────── -->
+    <FrameLayout
+        android:id="@+id/webview_container"
+        android:layout_width="match_parent"
+        android:layout_height="0dp"
+        android:layout_weight="1">
+
+        <FrameLayout
+            android:id="@+id/webview_stack"
+            android:layout_width="match_parent"
+            android:layout_height="match_parent" />
+
+        <androidx.recyclerview.widget.RecyclerView
+            android:id="@+id/suggestions_list"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:layout_gravity="top"
+            android:background="@color/surface"
+            android:elevation="8dp"
+            android:visibility="gone" />
+
+    </FrameLayout>
+
+    <!-- Hidden panel host (legacy id kept for bindViews) -->
+    <LinearLayout
+        android:id="@+id/bottom_sheet"
+        android:layout_width="match_parent"
+        android:layout_height="0dp"
+        android:visibility="gone" />
+
+</LinearLayout>

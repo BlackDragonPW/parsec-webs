@@ -268,7 +268,7 @@ impl ExtensionRuntime {
                         }
                         // Filter by URL pattern if requested
                         if let Some(ref pat) = query_url {
-                            if !extension_store::url_matches_patterns(&s.url, &[pat.clone()]) {
+                            if !crate::extension_store::url_matches_patterns(&s.url, &[pat.clone()]) {
                                 return false;
                             }
                         }

@@ -3,6 +3,8 @@
 # ── Keep JNI entry point class ─────────────────────────────────────────────────
 -keep class os.parsec.browser.ParsecCore { *; }
 -keep class os.parsec.browser.ParsecApplication { *; }
+-keep class os.parsec.browser.ResourceBlocker { *; }
+-keep class os.parsec.browser.ui.ParsecJsBridge { *; }
 
 # ── Keep all browser UI classes (referenced from XML / bottom sheets) ──────────
 -keep class os.parsec.browser.ui.** { *; }

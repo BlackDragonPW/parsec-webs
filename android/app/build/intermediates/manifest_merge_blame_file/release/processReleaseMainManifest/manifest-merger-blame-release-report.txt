@@ -1,0 +1,305 @@
+1<?xml version="1.0" encoding="utf-8"?>
+2<manifest xmlns:android="http://schemas.android.com/apk/res/android"
+3    package="os.parsec.browser"
+4    android:versionCode="13"
+5    android:versionName="1.3.0" >
+6
+7    <uses-sdk
+8        android:minSdkVersion="26"
+9        android:targetSdkVersion="34" />
+10
+11    <!-- ── Permissions ────────────────────────────────────────────── -->
+12    <uses-permission android:name="android.permission.INTERNET" />
+12-->P:\android\app\src\main\AndroidManifest.xml:6:5-67
+12-->P:\android\app\src\main\AndroidManifest.xml:6:22-64
+13    <uses-permission android:name="android.permission.ACCESS_NETWORK_STATE" />
+13-->P:\android\app\src\main\AndroidManifest.xml:7:5-79
+13-->P:\android\app\src\main\AndroidManifest.xml:7:22-76
+14    <uses-permission android:name="android.permission.ACCESS_WIFI_STATE" />
+14-->P:\android\app\src\main\AndroidManifest.xml:8:5-76
+14-->P:\android\app\src\main\AndroidManifest.xml:8:22-73
+15
+16    <!-- Downloads -->
+17    <uses-permission
+17-->P:\android\app\src\main\AndroidManifest.xml:11:5-12:38
+18        android:name="android.permission.WRITE_EXTERNAL_STORAGE"
+18-->P:\android\app\src\main\AndroidManifest.xml:11:22-78
+19        android:maxSdkVersion="28" />
+19-->P:\android\app\src\main\AndroidManifest.xml:12:9-35
+20    <uses-permission
+20-->P:\android\app\src\main\AndroidManifest.xml:13:5-14:38
+21        android:name="android.permission.READ_EXTERNAL_STORAGE"
+21-->P:\android\app\src\main\AndroidManifest.xml:13:22-77
+22        android:maxSdkVersion="32" />
+22-->P:\android\app\src\main\AndroidManifest.xml:14:9-35
+23
+24    <!-- Biometric for password vault -->
+25    <uses-permission android:name="android.permission.USE_BIOMETRIC" />
+25-->P:\android\app\src\main\AndroidManifest.xml:17:5-72
+25-->P:\android\app\src\main\AndroidManifest.xml:17:22-69
+26    <uses-permission android:name="android.permission.USE_FINGERPRINT" />
+26-->P:\android\app\src\main\AndroidManifest.xml:18:5-74
+26-->P:\android\app\src\main\AndroidManifest.xml:18:22-71
+27
+28    <!-- Camera / mic for web content -->
+29    <uses-permission android:name="android.permission.CAMERA" />
+29-->P:\android\app\src\main\AndroidManifest.xml:21:5-65
+29-->P:\android\app\src\main\AndroidManifest.xml:21:22-62
+30    <uses-permission android:name="android.permission.RECORD_AUDIO" />
+30-->P:\android\app\src\main\AndroidManifest.xml:22:5-71
+30-->P:\android\app\src\main\AndroidManifest.xml:22:22-68
+31    <uses-permission android:name="android.permission.MODIFY_AUDIO_SETTINGS" />
+31-->P:\android\app\src\main\AndroidManifest.xml:23:5-80
+31-->P:\android\app\src\main\AndroidManifest.xml:23:22-77
+32
+33    <!-- Notifications (download progress) -->
+34    <uses-permission android:name="android.permission.POST_NOTIFICATIONS" />
+34-->P:\android\app\src\main\AndroidManifest.xml:26:5-77
+34-->P:\android\app\src\main\AndroidManifest.xml:26:22-74
+35
+36    <!-- Vibration for haptic feedback -->
+37    <uses-permission android:name="android.permission.VIBRATE" />
+37-->P:\android\app\src\main\AndroidManifest.xml:29:5-66
+37-->P:\android\app\src\main\AndroidManifest.xml:29:22-63
+38
+39    <!-- FIX: Required for any foreground service -->
+40    <uses-permission android:name="android.permission.FOREGROUND_SERVICE" />
+40-->P:\android\app\src\main\AndroidManifest.xml:32:5-77
+40-->P:\android\app\src\main\AndroidManifest.xml:32:22-74
+41    <!-- FIX: Required on API 34+ when foregroundServiceType="dataSync" -->
+42    <uses-permission android:name="android.permission.FOREGROUND_SERVICE_DATA_SYNC" />
+42-->P:\android\app\src\main\AndroidManifest.xml:34:5-87
+42-->P:\android\app\src\main\AndroidManifest.xml:34:22-84
+43
+44    <!-- ── Hardware features ──────────────────────────────────────── -->
+45    <uses-feature
+45-->P:\android\app\src\main\AndroidManifest.xml:37:5-89
+46        android:name="android.hardware.touchscreen"
+46-->P:\android\app\src\main\AndroidManifest.xml:37:19-62
+47        android:required="true" />
+47-->P:\android\app\src\main\AndroidManifest.xml:37:63-86
+48    <uses-feature
+48-->P:\android\app\src\main\AndroidManifest.xml:38:5-39:65
+49        android:name="android.hardware.vulkan.version"
+49-->P:\android\app\src\main\AndroidManifest.xml:38:19-65
+50        android:required="false"
+50-->P:\android\app\src\main\AndroidManifest.xml:39:38-62
+51        android:version="0x00401000" />
+51-->P:\android\app\src\main\AndroidManifest.xml:39:9-37
+52
+53    <permission
+53-->[androidx.core:core:1.12.0] C:\Users\divyaamshu\.gradle\caches\transforms-4\2fc127297c25dd663bb97c2871ebb09d\transformed\core-1.12.0\AndroidManifest.xml:22:5-24:47
+54        android:name="os.parsec.browser.DYNAMIC_RECEIVER_NOT_EXPORTED_PERMISSION"
+54-->[androidx.core:core:1.12.0] C:\Users\divyaamshu\.gradle\caches\transforms-4\2fc127297c25dd663bb97c2871ebb09d\transformed\core-1.12.0\AndroidManifest.xml:23:9-81
+55        android:protectionLevel="signature" />
+55-->[androidx.core:core:1.12.0] C:\Users\divyaamshu\.gradle\caches\transforms-4\2fc127297c25dd663bb97c2871ebb09d\transformed\core-1.12.0\AndroidManifest.xml:24:9-44
+56
+57    <uses-permission android:name="os.parsec.browser.DYNAMIC_RECEIVER_NOT_EXPORTED_PERMISSION" />
+57-->[androidx.core:core:1.12.0] C:\Users\divyaamshu\.gradle\caches\transforms-4\2fc127297c25dd663bb97c2871ebb09d\transformed\core-1.12.0\AndroidManifest.xml:26:5-97
+57-->[androidx.core:core:1.12.0] C:\Users\divyaamshu\.gradle\caches\transforms-4\2fc127297c25dd663bb97c2871ebb09d\transformed\core-1.12.0\AndroidManifest.xml:26:22-94
+58
+59    <application
+59-->P:\android\app\src\main\AndroidManifest.xml:41:5-98:19
+60        android:name="os.parsec.browser.ParsecApplication"
+60-->P:\android\app\src\main\AndroidManifest.xml:42:9-42
+61        android:allowBackup="false"
+61-->P:\android\app\src\main\AndroidManifest.xml:43:9-36
+62        android:appComponentFactory="androidx.core.app.CoreComponentFactory"
+62-->[androidx.core:core:1.12.0] C:\Users\divyaamshu\.gradle\caches\transforms-4\2fc127297c25dd663bb97c2871ebb09d\transformed\core-1.12.0\AndroidManifest.xml:28:18-86
+63        android:dataExtractionRules="@xml/data_extraction_rules"
+63-->P:\android\app\src\main\AndroidManifest.xml:44:9-65
+64        android:extractNativeLibs="false"
+65        android:fullBackupContent="@xml/backup_rules"
+65-->P:\android\app\src\main\AndroidManifest.xml:45:9-54
+66        android:hardwareAccelerated="true"
+66-->P:\android\app\src\main\AndroidManifest.xml:46:9-43
+67        android:icon="@mipmap/ic_launcher"
+67-->P:\android\app\src\main\AndroidManifest.xml:47:9-43
+68        android:label="@string/app_name"
+68-->P:\android\app\src\main\AndroidManifest.xml:48:9-41
+69        android:roundIcon="@mipmap/ic_launcher_round"
+69-->P:\android\app\src\main\AndroidManifest.xml:49:9-54
+70        android:supportsRtl="true"
+70-->P:\android\app\src\main\AndroidManifest.xml:50:9-35
+71        android:theme="@style/Theme.ParsecBrowser"
+71-->P:\android\app\src\main\AndroidManifest.xml:51:9-51
+72        android:usesCleartextTraffic="false" >
+72-->P:\android\app\src\main\AndroidManifest.xml:52:9-45
+73
+74        <!-- ── Main browser activity ──────────────────────────────── -->
+75        <activity
+75-->P:\android\app\src\main\AndroidManifest.xml:56:9-85:20
+76            android:name="os.parsec.browser.ui.BrowserActivity"
+76-->P:\android\app\src\main\AndroidManifest.xml:57:13-47
+77            android:configChanges="orientation|screenSize|keyboardHidden|keyboard|navigation|uiMode|density|fontScale|smallestScreenSize|screenLayout"
+77-->P:\android\app\src\main\AndroidManifest.xml:58:13-151
+78            android:exported="true"
+78-->P:\android\app\src\main\AndroidManifest.xml:59:13-36
+79            android:launchMode="singleTask"
+79-->P:\android\app\src\main\AndroidManifest.xml:60:13-44
+80            android:theme="@style/Theme.ParsecBrowser.NoActionBar"
+80-->P:\android\app\src\main\AndroidManifest.xml:61:13-67
+81            android:windowSoftInputMode="adjustResize" >
+81-->P:\android\app\src\main\AndroidManifest.xml:62:13-55
+82            <intent-filter>
+82-->P:\android\app\src\main\AndroidManifest.xml:64:13-67:29
+83                <action android:name="android.intent.action.MAIN" />
+83-->P:\android\app\src\main\AndroidManifest.xml:65:17-69
+83-->P:\android\app\src\main\AndroidManifest.xml:65:25-66
+84
+85                <category android:name="android.intent.category.LAUNCHER" />
+85-->P:\android\app\src\main\AndroidManifest.xml:66:17-77
+85-->P:\android\app\src\main\AndroidManifest.xml:66:27-74
+86            </intent-filter>
+87
+88            <!-- Handle http/https links so Parsec can be set as default browser -->
+89            <intent-filter android:autoVerify="true" >
+89-->P:\android\app\src\main\AndroidManifest.xml:70:13-76:29
+89-->P:\android\app\src\main\AndroidManifest.xml:70:28-53
+90                <action android:name="android.intent.action.VIEW" />
+90-->P:\android\app\src\main\AndroidManifest.xml:71:17-69
+90-->P:\android\app\src\main\AndroidManifest.xml:71:25-66
+91
+92                <category android:name="android.intent.category.DEFAULT" />
+92-->P:\android\app\src\main\AndroidManifest.xml:72:17-76
+92-->P:\android\app\src\main\AndroidManifest.xml:72:27-73
+93                <category android:name="android.intent.category.BROWSABLE" />
+93-->P:\android\app\src\main\AndroidManifest.xml:73:17-78
+93-->P:\android\app\src\main\AndroidManifest.xml:73:27-75
+94
+95                <data android:scheme="http" />
+95-->P:\android\app\src\main\AndroidManifest.xml:74:17-47
+95-->P:\android\app\src\main\AndroidManifest.xml:74:23-44
+96                <data android:scheme="https" />
+96-->P:\android\app\src\main\AndroidManifest.xml:74:17-47
+96-->P:\android\app\src\main\AndroidManifest.xml:74:23-44
+97            </intent-filter>
+98
+99            <!-- Handle parsec:// internal URLs -->
+100            <intent-filter>
+100-->P:\android\app\src\main\AndroidManifest.xml:79:13-84:29
+101                <action android:name="android.intent.action.VIEW" />
+101-->P:\android\app\src\main\AndroidManifest.xml:71:17-69
+101-->P:\android\app\src\main\AndroidManifest.xml:71:25-66
+102
+103                <category android:name="android.intent.category.DEFAULT" />
+103-->P:\android\app\src\main\AndroidManifest.xml:72:17-76
+103-->P:\android\app\src\main\AndroidManifest.xml:72:27-73
+104                <category android:name="android.intent.category.BROWSABLE" />
+104-->P:\android\app\src\main\AndroidManifest.xml:73:17-78
+104-->P:\android\app\src\main\AndroidManifest.xml:73:27-75
+105
+106                <data android:scheme="parsec" />
+106-->P:\android\app\src\main\AndroidManifest.xml:74:17-47
+106-->P:\android\app\src\main\AndroidManifest.xml:74:23-44
+107            </intent-filter>
+108        </activity>
+109
+110        <!-- ── Download service ───────────────────────────────────── -->
+111        <service
+111-->P:\android\app\src\main\AndroidManifest.xml:88:9-91:56
+112            android:name="os.parsec.browser.service.DownloadService"
+112-->P:\android\app\src\main\AndroidManifest.xml:89:13-52
+113            android:exported="false"
+113-->P:\android\app\src\main\AndroidManifest.xml:90:13-37
+114            android:foregroundServiceType="dataSync" />
+114-->P:\android\app\src\main\AndroidManifest.xml:91:13-53
+115
+116        <!-- ── Private DNS config ─────────────────────────────────── -->
+117        <meta-data
+117-->P:\android\app\src\main\AndroidManifest.xml:94:9-96:36
+118            android:name="android.webkit.WebView.MetricsOptOut"
+118-->P:\android\app\src\main\AndroidManifest.xml:95:13-64
+119            android:value="true" />
+119-->P:\android\app\src\main\AndroidManifest.xml:96:13-33
+120
+121        <uses-library
+121-->[androidx.window:window:1.2.0] C:\Users\divyaamshu\.gradle\caches\transforms-4\943ef7177fc7797a72f0ac3ef312a72b\transformed\jetified-window-1.2.0\AndroidManifest.xml:23:9-25:40
+122            android:name="androidx.window.extensions"
+122-->[androidx.window:window:1.2.0] C:\Users\divyaamshu\.gradle\caches\transforms-4\943ef7177fc7797a72f0ac3ef312a72b\transformed\jetified-window-1.2.0\AndroidManifest.xml:24:13-54
+123            android:required="false" />
+123-->[androidx.window:window:1.2.0] C:\Users\divyaamshu\.gradle\caches\transforms-4\943ef7177fc7797a72f0ac3ef312a72b\transformed\jetified-window-1.2.0\AndroidManifest.xml:25:13-37
+124        <uses-library
+124-->[androidx.window:window:1.2.0] C:\Users\divyaamshu\.gradle\caches\transforms-4\943ef7177fc7797a72f0ac3ef312a72b\transformed\jetified-window-1.2.0\AndroidManifest.xml:26:9-28:40
+125            android:name="androidx.window.sidecar"
+125-->[androidx.window:window:1.2.0] C:\Users\divyaamshu\.gradle\caches\transforms-4\943ef7177fc7797a72f0ac3ef312a72b\transformed\jetified-window-1.2.0\AndroidManifest.xml:27:13-51
+126            android:required="false" />
+126-->[androidx.window:window:1.2.0] C:\Users\divyaamshu\.gradle\caches\transforms-4\943ef7177fc7797a72f0ac3ef312a72b\transformed\jetified-window-1.2.0\AndroidManifest.xml:28:13-37
+127
+128        <provider
+128-->[androidx.emoji2:emoji2:1.2.0] C:\Users\divyaamshu\.gradle\caches\transforms-4\adf17e0709568d40bd6b2f80134df86d\transformed\jetified-emoji2-1.2.0\AndroidManifest.xml:24:9-32:20
+129            android:name="androidx.startup.InitializationProvider"
+129-->[androidx.emoji2:emoji2:1.2.0] C:\Users\divyaamshu\.gradle\caches\transforms-4\adf17e0709568d40bd6b2f80134df86d\transformed\jetified-emoji2-1.2.0\AndroidManifest.xml:25:13-67
+130            android:authorities="os.parsec.browser.androidx-startup"
+130-->[androidx.emoji2:emoji2:1.2.0] C:\Users\divyaamshu\.gradle\caches\transforms-4\adf17e0709568d40bd6b2f80134df86d\transformed\jetified-emoji2-1.2.0\AndroidManifest.xml:26:13-68
+131            android:exported="false" >
+131-->[androidx.emoji2:emoji2:1.2.0] C:\Users\divyaamshu\.gradle\caches\transforms-4\adf17e0709568d40bd6b2f80134df86d\transformed\jetified-emoji2-1.2.0\AndroidManifest.xml:27:13-37
+132            <meta-data
+132-->[androidx.emoji2:emoji2:1.2.0] C:\Users\divyaamshu\.gradle\caches\transforms-4\adf17e0709568d40bd6b2f80134df86d\transformed\jetified-emoji2-1.2.0\AndroidManifest.xml:29:13-31:52
+133                android:name="androidx.emoji2.text.EmojiCompatInitializer"
+133-->[androidx.emoji2:emoji2:1.2.0] C:\Users\divyaamshu\.gradle\caches\transforms-4\adf17e0709568d40bd6b2f80134df86d\transformed\jetified-emoji2-1.2.0\AndroidManifest.xml:30:17-75
+134                android:value="androidx.startup" />
+134-->[androidx.emoji2:emoji2:1.2.0] C:\Users\divyaamshu\.gradle\caches\transforms-4\adf17e0709568d40bd6b2f80134df86d\transformed\jetified-emoji2-1.2.0\AndroidManifest.xml:31:17-49
+135            <meta-data
+135-->[androidx.lifecycle:lifecycle-process:2.7.0] C:\Users\divyaamshu\.gradle\caches\transforms-4\c832795033ea5ce73b58df6200ada1ae\transformed\jetified-lifecycle-process-2.7.0\AndroidManifest.xml:29:13-31:52
+136                android:name="androidx.lifecycle.ProcessLifecycleInitializer"
+136-->[androidx.lifecycle:lifecycle-process:2.7.0] C:\Users\divyaamshu\.gradle\caches\transforms-4\c832795033ea5ce73b58df6200ada1ae\transformed\jetified-lifecycle-process-2.7.0\AndroidManifest.xml:30:17-78
+137                android:value="androidx.startup" />
+137-->[androidx.lifecycle:lifecycle-process:2.7.0] C:\Users\divyaamshu\.gradle\caches\transforms-4\c832795033ea5ce73b58df6200ada1ae\transformed\jetified-lifecycle-process-2.7.0\AndroidManifest.xml:31:17-49
+138            <meta-data
+138-->[androidx.profileinstaller:profileinstaller:1.3.1] C:\Users\divyaamshu\.gradle\caches\transforms-4\8bf3b986a42f009a9e12ac0a4c4a43eb\transformed\jetified-profileinstaller-1.3.1\AndroidManifest.xml:29:13-31:52
+139                android:name="androidx.profileinstaller.ProfileInstallerInitializer"
+139-->[androidx.profileinstaller:profileinstaller:1.3.1] C:\Users\divyaamshu\.gradle\caches\transforms-4\8bf3b986a42f009a9e12ac0a4c4a43eb\transformed\jetified-profileinstaller-1.3.1\AndroidManifest.xml:30:17-85
+140                android:value="androidx.startup" />
+140-->[androidx.profileinstaller:profileinstaller:1.3.1] C:\Users\divyaamshu\.gradle\caches\transforms-4\8bf3b986a42f009a9e12ac0a4c4a43eb\transformed\jetified-profileinstaller-1.3.1\AndroidManifest.xml:31:17-49
+141        </provider>
+142
+143        <service
+143-->[androidx.room:room-runtime:2.6.1] C:\Users\divyaamshu\.gradle\caches\transforms-4\77b94ebf0699517f05004fb2a461aaea\transformed\room-runtime-2.6.1\AndroidManifest.xml:24:9-28:63
+144            android:name="androidx.room.MultiInstanceInvalidationService"
+144-->[androidx.room:room-runtime:2.6.1] C:\Users\divyaamshu\.gradle\caches\transforms-4\77b94ebf0699517f05004fb2a461aaea\transformed\room-runtime-2.6.1\AndroidManifest.xml:25:13-74
+145            android:directBootAware="true"
+145-->[androidx.room:room-runtime:2.6.1] C:\Users\divyaamshu\.gradle\caches\transforms-4\77b94ebf0699517f05004fb2a461aaea\transformed\room-runtime-2.6.1\AndroidManifest.xml:26:13-43
+146            android:exported="false" />
+146-->[androidx.room:room-runtime:2.6.1] C:\Users\divyaamshu\.gradle\caches\transforms-4\77b94ebf0699517f05004fb2a461aaea\transformed\room-runtime-2.6.1\AndroidManifest.xml:27:13-37
+147
+148        <receiver
+148-->[androidx.profileinstaller:profileinstaller:1.3.1] C:\Users\divyaamshu\.gradle\caches\transforms-4\8bf3b986a42f009a9e12ac0a4c4a43eb\transformed\jetified-profileinstaller-1.3.1\AndroidManifest.xml:34:9-52:20
+149            android:name="androidx.profileinstaller.ProfileInstallReceiver"
+149-->[androidx.profileinstaller:profileinstaller:1.3.1] C:\Users\divyaamshu\.gradle\caches\transforms-4\8bf3b986a42f009a9e12ac0a4c4a43eb\transformed\jetified-profileinstaller-1.3.1\AndroidManifest.xml:35:13-76
+150            android:directBootAware="false"
+150-->[androidx.profileinstaller:profileinstaller:1.3.1] C:\Users\divyaamshu\.gradle\caches\transforms-4\8bf3b986a42f009a9e12ac0a4c4a43eb\transformed\jetified-profileinstaller-1.3.1\AndroidManifest.xml:36:13-44
+151            android:enabled="true"
+151-->[androidx.profileinstaller:profileinstaller:1.3.1] C:\Users\divyaamshu\.gradle\caches\transforms-4\8bf3b986a42f009a9e12ac0a4c4a43eb\transformed\jetified-profileinstaller-1.3.1\AndroidManifest.xml:37:13-35
+152            android:exported="true"
+152-->[androidx.profileinstaller:profileinstaller:1.3.1] C:\Users\divyaamshu\.gradle\caches\transforms-4\8bf3b986a42f009a9e12ac0a4c4a43eb\transformed\jetified-profileinstaller-1.3.1\AndroidManifest.xml:38:13-36
+153            android:permission="android.permission.DUMP" >
+153-->[androidx.profileinstaller:profileinstaller:1.3.1] C:\Users\divyaamshu\.gradle\caches\transforms-4\8bf3b986a42f009a9e12ac0a4c4a43eb\transformed\jetified-profileinstaller-1.3.1\AndroidManifest.xml:39:13-57
+154            <intent-filter>
+154-->[androidx.profileinstaller:profileinstaller:1.3.1] C:\Users\divyaamshu\.gradle\caches\transforms-4\8bf3b986a42f009a9e12ac0a4c4a43eb\transformed\jetified-profileinstaller-1.3.1\AndroidManifest.xml:40:13-42:29
+155                <action android:name="androidx.profileinstaller.action.INSTALL_PROFILE" />
+155-->[androidx.profileinstaller:profileinstaller:1.3.1] C:\Users\divyaamshu\.gradle\caches\transforms-4\8bf3b986a42f009a9e12ac0a4c4a43eb\transformed\jetified-profileinstaller-1.3.1\AndroidManifest.xml:41:17-91
+155-->[androidx.profileinstaller:profileinstaller:1.3.1] C:\Users\divyaamshu\.gradle\caches\transforms-4\8bf3b986a42f009a9e12ac0a4c4a43eb\transformed\jetified-profileinstaller-1.3.1\AndroidManifest.xml:41:25-88
+156            </intent-filter>
+157            <intent-filter>
+157-->[androidx.profileinstaller:profileinstaller:1.3.1] C:\Users\divyaamshu\.gradle\caches\transforms-4\8bf3b986a42f009a9e12ac0a4c4a43eb\transformed\jetified-profileinstaller-1.3.1\AndroidManifest.xml:43:13-45:29
+158                <action android:name="androidx.profileinstaller.action.SKIP_FILE" />
+158-->[androidx.profileinstaller:profileinstaller:1.3.1] C:\Users\divyaamshu\.gradle\caches\transforms-4\8bf3b986a42f009a9e12ac0a4c4a43eb\transformed\jetified-profileinstaller-1.3.1\AndroidManifest.xml:44:17-85
+158-->[androidx.profileinstaller:profileinstaller:1.3.1] C:\Users\divyaamshu\.gradle\caches\transforms-4\8bf3b986a42f009a9e12ac0a4c4a43eb\transformed\jetified-profileinstaller-1.3.1\AndroidManifest.xml:44:25-82
+159            </intent-filter>
+160            <intent-filter>
+160-->[androidx.profileinstaller:profileinstaller:1.3.1] C:\Users\divyaamshu\.gradle\caches\transforms-4\8bf3b986a42f009a9e12ac0a4c4a43eb\transformed\jetified-profileinstaller-1.3.1\AndroidManifest.xml:46:13-48:29
+161                <action android:name="androidx.profileinstaller.action.SAVE_PROFILE" />
+161-->[androidx.profileinstaller:profileinstaller:1.3.1] C:\Users\divyaamshu\.gradle\caches\transforms-4\8bf3b986a42f009a9e12ac0a4c4a43eb\transformed\jetified-profileinstaller-1.3.1\AndroidManifest.xml:47:17-88
+161-->[androidx.profileinstaller:profileinstaller:1.3.1] C:\Users\divyaamshu\.gradle\caches\transforms-4\8bf3b986a42f009a9e12ac0a4c4a43eb\transformed\jetified-profileinstaller-1.3.1\AndroidManifest.xml:47:25-85
+162            </intent-filter>
+163            <intent-filter>
+163-->[androidx.profileinstaller:profileinstaller:1.3.1] C:\Users\divyaamshu\.gradle\caches\transforms-4\8bf3b986a42f009a9e12ac0a4c4a43eb\transformed\jetified-profileinstaller-1.3.1\AndroidManifest.xml:49:13-51:29
+164                <action android:name="androidx.profileinstaller.action.BENCHMARK_OPERATION" />
+164-->[androidx.profileinstaller:profileinstaller:1.3.1] C:\Users\divyaamshu\.gradle\caches\transforms-4\8bf3b986a42f009a9e12ac0a4c4a43eb\transformed\jetified-profileinstaller-1.3.1\AndroidManifest.xml:50:17-95
+164-->[androidx.profileinstaller:profileinstaller:1.3.1] C:\Users\divyaamshu\.gradle\caches\transforms-4\8bf3b986a42f009a9e12ac0a4c4a43eb\transformed\jetified-profileinstaller-1.3.1\AndroidManifest.xml:50:25-92
+165            </intent-filter>
+166        </receiver>
+167    </application>
+168
+169</manifest>
